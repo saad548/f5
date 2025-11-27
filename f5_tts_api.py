@@ -3353,30 +3353,40 @@ async def submit_tts_permanent_job(
 
 @app.post("/jobs/voice-cloning-async")
 async def submit_voice_cloning_job(
-    audio_file_id: str = Form(...),
-    text: str = Form(...),
-    randomize_seed: bool = Form(True),
-    seed: int = Form(0),
-    remove_silence: bool = Form(False),
-    speed: float = Form(1.0),
-    nfe_step: int = Form(32),
-    cross_fade_duration: float = Form(0.15),
+    text: str = Form(..., description="Text to generate"),
+    ref_text: str = Form("", description="Reference text (leave empty for auto-transcription)"),
+    audio_file: UploadFile = File(..., description="Reference audio file (temporary)"),
+    randomize_seed: bool = Form(True, description="Use random seed"),
+    seed: int = Form(0, description="Specific seed (used if randomize_seed=false)"),
+    remove_silence: bool = Form(False, description="Remove silences"),
+    speed: float = Form(1.0, description="Speed (0.3-2.0)"),
+    nfe_step: int = Form(32, description="NFE steps (4-64)"),
+    cross_fade_duration: float = Form(0.15, description="Cross-fade duration (0.0-1.0)"),
     priority: int = Form(0),
     api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Submit voice cloning job (async version of /voice-cloning).
+    Upload audio file directly - it will be processed temporarily.
     Returns immediately with job_id for tracking.
     """
-    if audio_file_id not in uploaded_files:
-        raise HTTPException(status_code=404, detail="Audio file not found. Please upload audio first.")
-    
-    ref_audio_path = uploaded_files[audio_file_id]
-    if not os.path.exists(ref_audio_path):
-        raise HTTPException(status_code=404, detail="Reference audio file has expired. Please re-upload.")
+    if not audio_file.content_type.startswith('audio/'):
+        raise HTTPException(status_code=400, detail="File must be an audio file")
     
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
+    
+    # Create temporary reference file
+    temp_ref_id = str(uuid.uuid4())
+    file_extension = Path(audio_file.filename).suffix if audio_file.filename else ".wav"
+    temp_ref_path = os.path.join(tempfile.gettempdir(), f"f5tts_async_clone_{temp_ref_id}{file_extension}")
+    
+    try:
+        # Save temporary reference audio
+        with open(temp_ref_path, "wb") as buffer:
+            shutil.copyfileobj(audio_file.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving uploaded audio file: {str(e)}")
     
     # Prepare inference settings
     inference_settings = {
@@ -3400,7 +3410,8 @@ async def submit_voice_cloning_job(
     job_id = job_queue_manager.submit_job(
         job_type=JobType.VOICE_CLONING,
         parameters={
-            "audio_file_id": audio_file_id,
+            "temp_ref_path": temp_ref_path,  # Use temp file path instead of audio_file_id
+            "ref_text": ref_text,
             "gen_text": text,
             "inference_settings": inference_settings
         },
