@@ -665,6 +665,379 @@ async def health_check():
         "vocoder_loaded": vocoder is not None,
     }
 
+# Admin Panel Endpoint
+@app.get("/admin", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+async def admin_panel():
+    """Complete Admin Dashboard - Single Page Interface"""
+    
+    # Get system stats
+    try:
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('.')
+    except:
+        cpu_percent = 0
+        memory = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
+        disk = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
+    
+    # Get voice files
+    try:
+        voice_files = []
+        for file in os.listdir(REFERENCE_VOICES_DIR):
+            if not file.startswith('.') and file.endswith(('.wav', '.mp3', '.MP3', '.flac')):
+                file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+                file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+                voice_files.append({
+                    'name': file,
+                    'size': f"{file_size:.1f} MB",
+                    'path': file_path
+                })
+    except:
+        voice_files = []
+    
+    # Get queue stats
+    queue_stats = {"total_jobs": 0, "queue_size": 0, "current_job": None, "job_counts": {"queued": 0, "processing": 0, "completed": 0, "failed": 0}}
+    recent_jobs = []
+    if job_queue_manager:
+        queue_stats = job_queue_manager.get_queue_status()
+        # Get last 10 jobs
+        for job_id, job in list(job_queue_manager.jobs.items())[-10:]:
+            recent_jobs.append({
+                "id": job_id[:8],
+                "type": job.job_type.value,
+                "status": job.status.value,
+                "progress": job.progress,
+                "created": job.created_at.strftime('%H:%M:%S')
+            })
+    
+    # Get uploaded files
+    uploaded_count = len(uploaded_files)
+    
+    # Voice files list HTML
+    voice_rows = ""
+    for voice in voice_files:
+        voice_rows += f"""
+        <tr>
+            <td>{voice['name']}</td>
+            <td>{voice['size']}</td>
+            <td><button onclick="testVoice('{voice['name']}')" class="btn-small">Test</button></td>
+        </tr>"""
+    
+    # Recent jobs HTML
+    job_rows = ""
+    for job in recent_jobs:
+        status_color = {"queued": "#f39c12", "processing": "#3498db", "completed": "#27ae60", "failed": "#e74c3c"}.get(job['status'], "#95a5a6")
+        job_rows += f"""
+        <tr>
+            <td>{job['id']}</td>
+            <td>{job['type']}</td>
+            <td><span style="color: {status_color}; font-weight: bold;">{job['status']}</span></td>
+            <td>{job['progress']}%</td>
+            <td>{job['created']}</td>
+        </tr>"""
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>F5-TTS Admin Dashboard</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }}
+            
+            .container {{ display: flex; min-height: 100vh; }}
+            
+            /* Sidebar */
+            .sidebar {{ width: 250px; background: #2c3e50; color: white; padding: 20px; }}
+            .sidebar h2 {{ margin-bottom: 30px; text-align: center; color: #ecf0f1; }}
+            .nav-item {{ padding: 12px 15px; margin: 5px 0; cursor: pointer; border-radius: 5px; transition: all 0.3s; }}
+            .nav-item:hover {{ background: #34495e; }}
+            .nav-item.active {{ background: #3498db; }}
+            .nav-icon {{ margin-right: 10px; }}
+            
+            /* Main Content */
+            .main-content {{ flex: 1; padding: 20px; }}
+            .header {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }}
+            .header h1 {{ color: #2c3e50; margin-bottom: 5px; }}
+            .header p {{ color: #7f8c8d; }}
+            
+            /* Stats Cards */
+            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            .stat-card {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }}
+            .stat-value {{ font-size: 2em; font-weight: bold; margin-bottom: 5px; }}
+            .stat-label {{ color: #7f8c8d; font-size: 0.9em; }}
+            .stat-good {{ color: #27ae60; }}
+            .stat-warning {{ color: #f39c12; }}
+            .stat-danger {{ color: #e74c3c; }}
+            
+            /* Progress Bar */
+            .progress-bar {{ width: 100%; height: 6px; background: #ecf0f1; border-radius: 3px; margin-top: 10px; }}
+            .progress-fill {{ height: 100%; border-radius: 3px; transition: width 0.3s; }}
+            
+            /* Content Sections */
+            .content-section {{ background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; display: none; }}
+            .content-section.active {{ display: block; }}
+            .section-header {{ padding: 20px; border-bottom: 1px solid #ecf0f1; }}
+            .section-content {{ padding: 20px; }}
+            
+            /* Tables */
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ecf0f1; }}
+            th {{ background: #f8f9fa; font-weight: 600; color: #2c3e50; }}
+            tr:hover {{ background: #f8f9fa; }}
+            
+            /* Buttons */
+            .btn-small {{ padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8em; }}
+            .btn-primary {{ background: #3498db; color: white; }}
+            .btn-success {{ background: #27ae60; color: white; }}
+            .btn-danger {{ background: #e74c3c; color: white; }}
+            
+            /* Responsive */
+            @media (max-width: 768px) {{
+                .container {{ flex-direction: column; }}
+                .sidebar {{ width: 100%; }}
+                .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <h2>🎤 F5-TTS Admin</h2>
+                <div class="nav-item active" onclick="showSection('dashboard')">
+                    <span class="nav-icon">📊</span> Dashboard
+                </div>
+                <div class="nav-item" onclick="showSection('voices')">
+                    <span class="nav-icon">🎵</span> Voice Bank
+                </div>
+                <div class="nav-item" onclick="showSection('jobs')">
+                    <span class="nav-icon">⚙️</span> Job Queue
+                </div>
+                <div class="nav-item" onclick="showSection('files')">
+                    <span class="nav-icon">📁</span> File Manager
+                </div>
+                <div class="nav-item" onclick="showSection('system')">
+                    <span class="nav-icon">💻</span> System Info
+                </div>
+                <div class="nav-item" onclick="window.open('/docs', '_blank')">
+                    <span class="nav-icon">📚</span> API Docs
+                </div>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- Header -->
+                <div class="header">
+                    <h1>F5-TTS Administration Dashboard</h1>
+                    <p>Monitor and manage your Text-to-Speech server</p>
+                </div>
+                
+                <!-- Stats Overview -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value stat-good">🟢</div>
+                        <div class="stat-label">System Status</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{len(voice_files)}</div>
+                        <div class="stat-label">Voice Bank</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{queue_stats['total_jobs']}</div>
+                        <div class="stat-label">Total Jobs</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">{uploaded_count}</div>
+                        <div class="stat-label">Temp Files</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value {'stat-good' if F5TTS_ema_model and vocoder else 'stat-danger'}">{('✓' if F5TTS_ema_model and vocoder else '✗')}</div>
+                        <div class="stat-label">Models Loaded</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value stat-warning">{queue_stats['queue_size']}</div>
+                        <div class="stat-label">Queue Size</div>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Section -->
+                <div id="dashboard" class="content-section active">
+                    <div class="section-header">
+                        <h3>📊 System Overview</h3>
+                    </div>
+                    <div class="section-content">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">{cpu_percent:.1f}%</div>
+                                <div class="stat-label">CPU Usage</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: {cpu_percent}%; background: {'#e74c3c' if cpu_percent > 80 else '#f39c12' if cpu_percent > 50 else '#27ae60'};"></div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{memory.percent:.1f}%</div>
+                                <div class="stat-label">Memory Usage</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: {memory.percent}%; background: {'#e74c3c' if memory.percent > 80 else '#f39c12' if memory.percent > 50 else '#27ae60'};"></div>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{disk.percent:.1f}%</div>
+                                <div class="stat-label">Disk Usage</div>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: {disk.percent}%; background: {'#e74c3c' if disk.percent > 80 else '#f39c12' if disk.percent > 50 else '#27ae60'};"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Voice Bank Section -->
+                <div id="voices" class="content-section">
+                    <div class="section-header">
+                        <h3>🎵 Voice Bank Management</h3>
+                    </div>
+                    <div class="section-content">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Voice Name</th>
+                                    <th>File Size</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {voice_rows if voice_rows else '<tr><td colspan="3" style="text-align: center; color: #7f8c8d;">No voices uploaded yet</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Job Queue Section -->
+                <div id="jobs" class="content-section">
+                    <div class="section-header">
+                        <h3>⚙️ Job Queue Status</h3>
+                    </div>
+                    <div class="section-content">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">{queue_stats['job_counts']['queued']}</div>
+                                <div class="stat-label">Queued</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{queue_stats['job_counts']['processing']}</div>
+                                <div class="stat-label">Processing</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{queue_stats['job_counts']['completed']}</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{queue_stats['job_counts']['failed']}</div>
+                                <div class="stat-label">Failed</div>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin: 20px 0 10px 0;">Recent Jobs</h4>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Job ID</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {job_rows if job_rows else '<tr><td colspan="5" style="text-align: center; color: #7f8c8d;">No jobs yet</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- File Manager Section -->
+                <div id="files" class="content-section">
+                    <div class="section-header">
+                        <h3>📁 File Manager</h3>
+                    </div>
+                    <div class="section-content">
+                        <p><strong>Temporary Files:</strong> {uploaded_count} files in memory</p>
+                        <p><strong>Permanent Voices:</strong> {len(voice_files)} voices in voice bank</p>
+                        <p><strong>Storage Path:</strong> {REFERENCE_VOICES_DIR}</p>
+                        <br>
+                        <button onclick="cleanupFiles()" class="btn-primary">Clean Temporary Files</button>
+                    </div>
+                </div>
+                
+                <!-- System Info Section -->
+                <div id="system" class="content-section">
+                    <div class="section-header">
+                        <h3>💻 System Information</h3>
+                    </div>
+                    <div class="section-content">
+                        <p><strong>Platform:</strong> {platform.system()} {platform.release()}</p>
+                        <p><strong>F5-TTS Model:</strong> {'✓ Loaded' if F5TTS_ema_model else '✗ Not Loaded'}</p>
+                        <p><strong>Vocoder:</strong> {'✓ Loaded' if vocoder else '✗ Not Loaded'}</p>
+                        <p><strong>Memory:</strong> {memory.used // (1024**3):.1f} GB / {memory.total // (1024**3):.1f} GB</p>
+                        <p><strong>Disk:</strong> {disk.used // (1024**3):.1f} GB / {disk.total // (1024**3):.1f} GB</p>
+                        <p><strong>Current Job:</strong> {queue_stats['current_job'][:8] if queue_stats['current_job'] else 'None'}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            function showSection(sectionId) {{
+                // Hide all sections
+                document.querySelectorAll('.content-section').forEach(section => {{
+                    section.classList.remove('active');
+                }});
+                
+                // Remove active class from nav items
+                document.querySelectorAll('.nav-item').forEach(item => {{
+                    item.classList.remove('active');
+                }});
+                
+                // Show selected section
+                document.getElementById(sectionId).classList.add('active');
+                
+                // Add active class to clicked nav item
+                event.target.closest('.nav-item').classList.add('active');
+            }}
+            
+            function testVoice(voiceName) {{
+                alert('Testing voice: ' + voiceName + '\\n\\nThis will generate a test TTS with this voice.');
+                // You can implement actual test functionality here
+            }}
+            
+            function cleanupFiles() {{
+                if (confirm('Clean up all temporary files?')) {{
+                    fetch('/admin/cleanup-jobs', {{method: 'POST'}})
+                    .then(response => response.json())
+                    .then(data => {{
+                        alert('Cleanup completed: ' + data.message);
+                        location.reload();
+                    }})
+                    .catch(error => alert('Error: ' + error));
+                }}
+            }}
+            
+            // Auto-refresh every 30 seconds
+            setInterval(() => {{
+                if (document.getElementById('dashboard').classList.contains('active') || 
+                    document.getElementById('jobs').classList.contains('active')) {{
+                    location.reload();
+                }}
+            }}, 30000);
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
 @app.post("/upload-audio", response_model=AudioUploadResponse)
 async def upload_audio(
     background_tasks: BackgroundTasks,
@@ -1475,379 +1848,6 @@ async def submit_voice_cloning_job(
         "message": "Voice cloning job submitted successfully",
         "queue_position": job_queue_manager.job_queue.qsize()
     }
-
-# Admin Panel Endpoints
-@app.get("/admin", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
-async def admin_panel():
-    """Complete Admin Dashboard - Single Page Interface"""
-    
-    # Get system stats
-    try:
-        cpu_percent = psutil.cpu_percent()
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('.')
-    except:
-        cpu_percent = 0
-        memory = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
-        disk = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
-    
-    # Get voice files
-    try:
-        voice_files = []
-        for file in os.listdir(REFERENCE_VOICES_DIR):
-            if not file.startswith('.') and file.endswith(('.wav', '.mp3', '.MP3', '.flac')):
-                file_path = os.path.join(REFERENCE_VOICES_DIR, file)
-                file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
-                voice_files.append({
-                    'name': file,
-                    'size': f"{file_size:.1f} MB",
-                    'path': file_path
-                })
-    except:
-        voice_files = []
-    
-    # Get queue stats
-    queue_stats = {"total_jobs": 0, "queue_size": 0, "current_job": None, "job_counts": {"queued": 0, "processing": 0, "completed": 0, "failed": 0}}
-    recent_jobs = []
-    if job_queue_manager:
-        queue_stats = job_queue_manager.get_queue_status()
-        # Get last 10 jobs
-        for job_id, job in list(job_queue_manager.jobs.items())[-10:]:
-            recent_jobs.append({
-                "id": job_id[:8],
-                "type": job.job_type.value,
-                "status": job.status.value,
-                "progress": job.progress,
-                "created": job.created_at.strftime('%H:%M:%S')
-            })
-    
-    # Get uploaded files
-    uploaded_count = len(uploaded_files)
-    
-    # Voice files list HTML
-    voice_rows = ""
-    for voice in voice_files:
-        voice_rows += f"""
-        <tr>
-            <td>{voice['name']}</td>
-            <td>{voice['size']}</td>
-            <td><button onclick="testVoice('{voice['name']}')" class="btn-small">Test</button></td>
-        </tr>"""
-    
-    # Recent jobs HTML
-    job_rows = ""
-    for job in recent_jobs:
-        status_color = {"queued": "#f39c12", "processing": "#3498db", "completed": "#27ae60", "failed": "#e74c3c"}.get(job['status'], "#95a5a6")
-        job_rows += f"""
-        <tr>
-            <td>{job['id']}</td>
-            <td>{job['type']}</td>
-            <td><span style="color: {status_color}; font-weight: bold;">{job['status']}</span></td>
-            <td>{job['progress']}%</td>
-            <td>{job['created']}</td>
-        </tr>"""
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>F5-TTS Admin Dashboard</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }}
-            
-            .container {{ display: flex; min-height: 100vh; }}
-            
-            /* Sidebar */
-            .sidebar {{ width: 250px; background: #2c3e50; color: white; padding: 20px; }}
-            .sidebar h2 {{ margin-bottom: 30px; text-align: center; color: #ecf0f1; }}
-            .nav-item {{ padding: 12px 15px; margin: 5px 0; cursor: pointer; border-radius: 5px; transition: all 0.3s; }}
-            .nav-item:hover {{ background: #34495e; }}
-            .nav-item.active {{ background: #3498db; }}
-            .nav-icon {{ margin-right: 10px; }}
-            
-            /* Main Content */
-            .main-content {{ flex: 1; padding: 20px; }}
-            .header {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }}
-            .header h1 {{ color: #2c3e50; margin-bottom: 5px; }}
-            .header p {{ color: #7f8c8d; }}
-            
-            /* Stats Cards */
-            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
-            .stat-card {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }}
-            .stat-value {{ font-size: 2em; font-weight: bold; margin-bottom: 5px; }}
-            .stat-label {{ color: #7f8c8d; font-size: 0.9em; }}
-            .stat-good {{ color: #27ae60; }}
-            .stat-warning {{ color: #f39c12; }}
-            .stat-danger {{ color: #e74c3c; }}
-            
-            /* Progress Bar */
-            .progress-bar {{ width: 100%; height: 6px; background: #ecf0f1; border-radius: 3px; margin-top: 10px; }}
-            .progress-fill {{ height: 100%; border-radius: 3px; transition: width 0.3s; }}
-            
-            /* Content Sections */
-            .content-section {{ background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; display: none; }}
-            .content-section.active {{ display: block; }}
-            .section-header {{ padding: 20px; border-bottom: 1px solid #ecf0f1; }}
-            .section-content {{ padding: 20px; }}
-            
-            /* Tables */
-            table {{ width: 100%; border-collapse: collapse; }}
-            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ecf0f1; }}
-            th {{ background: #f8f9fa; font-weight: 600; color: #2c3e50; }}
-            tr:hover {{ background: #f8f9fa; }}
-            
-            /* Buttons */
-            .btn-small {{ padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8em; }}
-            .btn-primary {{ background: #3498db; color: white; }}
-            .btn-success {{ background: #27ae60; color: white; }}
-            .btn-danger {{ background: #e74c3c; color: white; }}
-            
-            /* Responsive */
-            @media (max-width: 768px) {{
-                .container {{ flex-direction: column; }}
-                .sidebar {{ width: 100%; }}
-                .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <!-- Sidebar -->
-            <div class="sidebar">
-                <h2>🎤 F5-TTS Admin</h2>
-                <div class="nav-item active" onclick="showSection('dashboard')">
-                    <span class="nav-icon">📊</span> Dashboard
-                </div>
-                <div class="nav-item" onclick="showSection('voices')">
-                    <span class="nav-icon">🎵</span> Voice Bank
-                </div>
-                <div class="nav-item" onclick="showSection('jobs')">
-                    <span class="nav-icon">⚙️</span> Job Queue
-                </div>
-                <div class="nav-item" onclick="showSection('files')">
-                    <span class="nav-icon">📁</span> File Manager
-                </div>
-                <div class="nav-item" onclick="showSection('system')">
-                    <span class="nav-icon">💻</span> System Info
-                </div>
-                <div class="nav-item" onclick="window.open('/admin/docs', '_blank')">
-                    <span class="nav-icon">📚</span> API Docs
-                </div>
-            </div>
-            
-            <!-- Main Content -->
-            <div class="main-content">
-                <!-- Header -->
-                <div class="header">
-                    <h1>F5-TTS Administration Dashboard</h1>
-                    <p>Monitor and manage your Text-to-Speech server</p>
-                </div>
-                
-                <!-- Stats Overview -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value stat-good">🟢</div>
-                        <div class="stat-label">System Status</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{len(voice_files)}</div>
-                        <div class="stat-label">Voice Bank</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{queue_stats['total_jobs']}</div>
-                        <div class="stat-label">Total Jobs</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">{uploaded_count}</div>
-                        <div class="stat-label">Temp Files</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value {'stat-good' if F5TTS_ema_model and vocoder else 'stat-danger'}">{('✓' if F5TTS_ema_model and vocoder else '✗')}</div>
-                        <div class="stat-label">Models Loaded</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value stat-warning">{queue_stats['queue_size']}</div>
-                        <div class="stat-label">Queue Size</div>
-                    </div>
-                </div>
-                
-                <!-- Dashboard Section -->
-                <div id="dashboard" class="content-section active">
-                    <div class="section-header">
-                        <h3>📊 System Overview</h3>
-                    </div>
-                    <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">{cpu_percent:.1f}%</div>
-                                <div class="stat-label">CPU Usage</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {cpu_percent}%; background: {'#e74c3c' if cpu_percent > 80 else '#f39c12' if cpu_percent > 50 else '#27ae60'};"></div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{memory.percent:.1f}%</div>
-                                <div class="stat-label">Memory Usage</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {memory.percent}%; background: {'#e74c3c' if memory.percent > 80 else '#f39c12' if memory.percent > 50 else '#27ae60'};"></div>
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{disk.percent:.1f}%</div>
-                                <div class="stat-label">Disk Usage</div>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {disk.percent}%; background: {'#e74c3c' if disk.percent > 80 else '#f39c12' if disk.percent > 50 else '#27ae60'};"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Voice Bank Section -->
-                <div id="voices" class="content-section">
-                    <div class="section-header">
-                        <h3>🎵 Voice Bank Management</h3>
-                    </div>
-                    <div class="section-content">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Voice Name</th>
-                                    <th>File Size</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {voice_rows if voice_rows else '<tr><td colspan="3" style="text-align: center; color: #7f8c8d;">No voices uploaded yet</td></tr>'}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Job Queue Section -->
-                <div id="jobs" class="content-section">
-                    <div class="section-header">
-                        <h3>⚙️ Job Queue Status</h3>
-                    </div>
-                    <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">{queue_stats['job_counts']['queued']}</div>
-                                <div class="stat-label">Queued</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{queue_stats['job_counts']['processing']}</div>
-                                <div class="stat-label">Processing</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{queue_stats['job_counts']['completed']}</div>
-                                <div class="stat-label">Completed</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{queue_stats['job_counts']['failed']}</div>
-                                <div class="stat-label">Failed</div>
-                            </div>
-                        </div>
-                        
-                        <h4 style="margin: 20px 0 10px 0;">Recent Jobs</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Job ID</th>
-                                    <th>Type</th>
-                                    <th>Status</th>
-                                    <th>Progress</th>
-                                    <th>Created</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {job_rows if job_rows else '<tr><td colspan="5" style="text-align: center; color: #7f8c8d;">No jobs yet</td></tr>'}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- File Manager Section -->
-                <div id="files" class="content-section">
-                    <div class="section-header">
-                        <h3>📁 File Manager</h3>
-                    </div>
-                    <div class="section-content">
-                        <p><strong>Temporary Files:</strong> {uploaded_count} files in memory</p>
-                        <p><strong>Permanent Voices:</strong> {len(voice_files)} voices in voice bank</p>
-                        <p><strong>Storage Path:</strong> {REFERENCE_VOICES_DIR}</p>
-                        <br>
-                        <button onclick="cleanupFiles()" class="btn-primary">Clean Temporary Files</button>
-                    </div>
-                </div>
-                
-                <!-- System Info Section -->
-                <div id="system" class="content-section">
-                    <div class="section-header">
-                        <h3>💻 System Information</h3>
-                    </div>
-                    <div class="section-content">
-                        <p><strong>Platform:</strong> {platform.system()} {platform.release()}</p>
-                        <p><strong>F5-TTS Model:</strong> {'✓ Loaded' if F5TTS_ema_model else '✗ Not Loaded'}</p>
-                        <p><strong>Vocoder:</strong> {'✓ Loaded' if vocoder else '✗ Not Loaded'}</p>
-                        <p><strong>Memory:</strong> {memory.used // (1024**3):.1f} GB / {memory.total // (1024**3):.1f} GB</p>
-                        <p><strong>Disk:</strong> {disk.used // (1024**3):.1f} GB / {disk.total // (1024**3):.1f} GB</p>
-                        <p><strong>Current Job:</strong> {queue_stats['current_job'][:8] if queue_stats['current_job'] else 'None'}</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <script>
-            function showSection(sectionId) {{
-                // Hide all sections
-                document.querySelectorAll('.content-section').forEach(section => {{
-                    section.classList.remove('active');
-                }});
-                
-                // Remove active class from nav items
-                document.querySelectorAll('.nav-item').forEach(item => {{
-                    item.classList.remove('active');
-                }});
-                
-                // Show selected section
-                document.getElementById(sectionId).classList.add('active');
-                
-                // Add active class to clicked nav item
-                event.target.closest('.nav-item').classList.add('active');
-            }}
-            
-            function testVoice(voiceName) {{
-                alert('Testing voice: ' + voiceName + '\\n\\nThis will generate a test TTS with this voice.');
-                // You can implement actual test functionality here
-            }}
-            
-            function cleanupFiles() {{
-                if (confirm('Clean up all temporary files?')) {{
-                    fetch('/admin/cleanup-jobs', {{method: 'POST'}})
-                    .then(response => response.json())
-                    .then(data => {{
-                        alert('Cleanup completed: ' + data.message);
-                        location.reload();
-                    }})
-                    .catch(error => alert('Error: ' + error));
-                }}
-            }}
-            
-            // Auto-refresh every 30 seconds
-            setInterval(() => {{
-                if (document.getElementById('dashboard').classList.contains('active') || 
-                    document.getElementById('jobs').classList.contains('active')) {{
-                    location.reload();
-                }}
-            }}, 30000);
-        </script>
-    </body>
-    </html>
-    """
-    return html_content
 
 # Admin Panel Cleanup Actions
 @app.post("/admin/cleanup-jobs", dependencies=[Depends(verify_admin)])
