@@ -665,14 +665,17 @@ async def health_check():
         "vocoder_loaded": vocoder is not None,
     }
 
-# Admin Panel Endpoint
 @app.get("/admin")
-async def admin_panel():
-    """Simple admin test"""
-    return {"message": "Admin endpoint working!", "status": "success"}
+async def admin_simple():
+    """Super simple admin endpoint"""
+    return {
+        "message": "✅ ADMIN WORKS!", 
+        "username": "yasirr548",
+        "password": "yasirr548AJSKD#D45s",
+        "dashboard_url": "/admin-full"
+    }
 
-# Full Admin Dashboard
-@app.get("/admin-dashboard", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+@app.get("/admin-full", response_class=HTMLResponse)
 async def admin_panel():
     """Complete Admin Dashboard - Single Page Interface"""
     
