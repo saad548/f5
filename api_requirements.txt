@@ -1,0 +1,17 @@
+# F5-TTS API Server Requirements
+# Install these packages after setting up PyTorch with CUDA
+
+# Core FastAPI dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart
+
+# Audio processing
+librosa
+soundfile
+pydub
+
+# Additional dependencies that might be needed
+cached-path
+transformers
+safetensors

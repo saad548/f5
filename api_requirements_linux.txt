@@ -1,0 +1,29 @@
+# F5-TTS API Server Requirements for Ubuntu
+# Install these packages after setting up PyTorch with CUDA
+
+# Core FastAPI dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.0
+pydub>=0.25.0
+
+# Machine learning and model dependencies
+numpy>=1.24.0
+torch  # Will be installed separately with CUDA
+torchaudio  # Will be installed separately with CUDA
+transformers>=4.35.0
+safetensors>=0.4.0
+
+# Caching and utilities
+cached-path>=1.6.0
+
+# Optional: For better performance
+accelerate>=0.24.0
+
+# System dependencies (install via apt if needed):
+# sudo apt update
+# sudo apt install -y ffmpeg libsndfile1 portaudio19-dev python3-dev
