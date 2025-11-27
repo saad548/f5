@@ -714,8 +714,51 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
     
     # Enhanced Voice files list HTML with professional features
     voice_rows = ""
+    voice_cards_html = ""
     for voice in voice_files:
         voice_name_clean = voice['name'].replace('.wav', '').replace('.mp3', '').replace('.flac', '')
+        voice_initial = voice_name_clean[0].upper() if voice_name_clean else 'V'
+        
+        # Generate voice card
+        voice_cards_html += f"""
+        <div class="voice-card">
+            <div class="voice-info">
+                <div class="voice-avatar">{voice_initial}</div>
+                <div class="voice-details">
+                    <h3>{voice_name_clean}</h3>
+                    <div class="voice-meta">
+                        <span><i class="fas fa-weight"></i> {voice['size']}</span>
+                        <span><i class="fas fa-clock"></i> ~5-10s</span>
+                        <span><i class="fas fa-star"></i> Premium Quality</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="audio-player" id="player-{voice_name_clean}">
+                <audio controls style="width: 100%; margin-bottom: 10px;" preload="none">
+                    <source src="/voice/{voice['name']}" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+            </div>
+            
+            <div class="voice-controls">
+                <button onclick="playVoice('{voice['name']}')" class="btn-small btn-primary">
+                    <i class="fas fa-play"></i> Preview
+                </button>
+                <button onclick="testVoiceGeneration('{voice['name']}')" class="btn-small btn-success">
+                    <i class="fas fa-magic"></i> Test TTS
+                </button>
+                <button onclick="downloadVoice('{voice['name']}')" class="btn-small btn-glass">
+                    <i class="fas fa-download"></i> Download
+                </button>
+                <button onclick="confirmDeleteVoice('{voice['name']}')" class="btn-small btn-danger">
+                    <i class="fas fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+        """
+        
+        # Generate table row for backward compatibility
         voice_rows += f"""
         <tr>
             <td>
@@ -807,16 +850,23 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             :root {{
-                --primary-color: #3498db;
+                --primary-color: #667eea;
+                --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 --secondary-color: #2c3e50;
-                --success-color: #27ae60;
-                --warning-color: #f39c12;
-                --danger-color: #e74c3c;
-                --dark-bg: #1a1a1a;
-                --dark-sidebar: #2d2d2d;
-                --dark-card: #333333;
-                --text-light: #ecf0f1;
-                --border-color: #ecf0f1;
+                --success-color: #4ecdc4;
+                --success-gradient: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+                --warning-color: #feca57;
+                --warning-gradient: linear-gradient(135deg, #feca57 0%, #ff9ff3 100%);
+                --danger-color: #ff6b6b;
+                --danger-gradient: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+                --dark-bg: #0f0f23;
+                --dark-sidebar: #1a1a2e;
+                --dark-card: #16213e;
+                --text-light: #eee;
+                --border-color: #e1e8ed;
+                --glass-bg: rgba(255, 255, 255, 0.1);
+                --shadow-light: 0 8px 32px rgba(31, 38, 135, 0.37);
+                --shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.4);
             }}
             
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -833,14 +883,16 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
             
             .container {{ display: flex; min-height: 100vh; }}
             
-            /* Enhanced Sidebar */
+            /* Ultra-Modern Sidebar */
             .sidebar {{ 
-                width: 280px; 
-                background: linear-gradient(135deg, #2c3e50, #34495e); 
+                width: 300px; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #667eea 100%); 
                 color: white; 
-                padding: 20px; 
+                padding: 25px; 
                 position: relative;
-                box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+                box-shadow: 4px 0 30px rgba(0,0,0,0.2);
+                backdrop-filter: blur(20px);
+                border-right: 1px solid rgba(255,255,255,0.1);
             }}
             
             .dark-mode .sidebar {{
@@ -991,14 +1043,16 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
             }}
             
             .stat-card {{ 
-                background: white; 
-                padding: 25px; 
-                border-radius: 15px; 
-                box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+                background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.8) 100%); 
+                backdrop-filter: blur(20px);
+                padding: 30px; 
+                border-radius: 20px; 
+                box-shadow: 0 8px 40px rgba(0,0,0,0.1); 
                 text-align: center;
                 position: relative;
                 overflow: hidden;
-                transition: all 0.3s ease;
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                border: 1px solid rgba(255,255,255,0.3);
             }}
             
             .dark-mode .stat-card {{
@@ -1162,50 +1216,97 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                 background: linear-gradient(90deg, rgba(52, 152, 219, 0.05), rgba(46, 204, 113, 0.05)); 
             }}
             
-            /* Enhanced Buttons */
+            /* Ultra-Modern Buttons */
             .btn-small {{ 
-                padding: 8px 16px; 
+                padding: 12px 24px; 
                 border: none; 
-                border-radius: 6px; 
+                border-radius: 16px; 
                 cursor: pointer; 
-                font-size: 0.85em;
-                font-weight: 500;
-                transition: all 0.3s;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+                font-size: 0.9em;
+                font-weight: 600;
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                text-transform: none;
+                letter-spacing: 0.3px;
+                position: relative;
+                overflow: hidden;
+                backdrop-filter: blur(10px);
+                margin: 3px;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                border: 1px solid rgba(255,255,255,0.2);
+            }}
+            
+            .btn-small::before {{
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+                transition: left 0.5s;
+            }}
+            
+            .btn-small:hover::before {{
+                left: 100%;
             }}
             
             .btn-primary {{ 
-                background: linear-gradient(45deg, #3498db, #2980b9); 
+                background: var(--primary-gradient);
                 color: white;
-                box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
+                box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
             }}
             
             .btn-primary:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+                transform: translateY(-3px) scale(1.02);
+                box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
             }}
             
             .btn-success {{ 
-                background: linear-gradient(45deg, #27ae60, #229954); 
+                background: var(--success-gradient);
                 color: white;
-                box-shadow: 0 2px 10px rgba(39, 174, 96, 0.3);
+                box-shadow: 0 4px 20px rgba(78, 205, 196, 0.4);
             }}
             
             .btn-success:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+                transform: translateY(-3px) scale(1.02);
+                box-shadow: 0 8px 30px rgba(78, 205, 196, 0.6);
+            }}
+            
+            .btn-warning {{ 
+                background: var(--warning-gradient);
+                color: white;
+                box-shadow: 0 4px 20px rgba(254, 202, 87, 0.4);
+            }}
+            
+            .btn-warning:hover {{
+                transform: translateY(-3px) scale(1.02);
+                box-shadow: 0 8px 30px rgba(254, 202, 87, 0.6);
             }}
             
             .btn-danger {{ 
-                background: linear-gradient(45deg, #e74c3c, #c0392b); 
+                background: var(--danger-gradient);
                 color: white;
-                box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
+                box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
             }}
             
             .btn-danger:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+                transform: translateY(-3px) scale(1.02);
+                box-shadow: 0 8px 30px rgba(255, 107, 107, 0.6);
+            }}
+            
+            .btn-glass {{
+                background: var(--glass-bg);
+                backdrop-filter: blur(15px);
+                border: 1px solid rgba(255,255,255,0.3);
+                color: var(--text-light);
+                box-shadow: var(--shadow-light);
+            }}
+            
+            .btn-glass:hover {{
+                background: rgba(255,255,255,0.2);
+                transform: translateY(-3px) scale(1.02);
             }}
             
             /* Charts Container */
@@ -1221,19 +1322,119 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                 background: var(--dark-card);
             }}
             
-            /* Voice Player */
-            .voice-player {{
-                background: linear-gradient(135deg, #f8f9fa, #ffffff);
-                padding: 15px;
-                border-radius: 10px;
-                margin: 10px 0;
+            /* Modern Voice Cards */
+            .voice-card {{
+                background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.8) 100%);
+                backdrop-filter: blur(20px);
+                border-radius: 20px;
+                padding: 25px;
+                margin: 15px 0;
+                border: 1px solid rgba(255,255,255,0.3);
+                box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);
+                transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            }}
+            
+            .voice-card:hover {{
+                transform: translateY(-5px);
+                box-shadow: 0 12px 40px rgba(31, 38, 135, 0.25);
+            }}
+            
+            .dark-mode .voice-card {{
+                background: linear-gradient(135deg, rgba(22, 33, 62, 0.9) 0%, rgba(22, 33, 62, 0.7) 100%);
+                border: 1px solid rgba(255,255,255,0.1);
+            }}
+            
+            .voice-info {{
                 display: flex;
                 align-items: center;
+                gap: 20px;
+                margin-bottom: 20px;
+            }}
+            
+            .voice-avatar {{
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: var(--primary-gradient);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 24px;
+                font-weight: bold;
+                box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+            }}
+            
+            .voice-details h3 {{
+                margin: 0 0 5px 0;
+                color: var(--primary-color);
+                font-size: 1.3em;
+            }}
+            
+            .voice-meta {{
+                color: #666;
+                font-size: 0.9em;
+                display: flex;
                 gap: 15px;
             }}
             
-            .dark-mode .voice-player {{
-                background: linear-gradient(135deg, #404040, #4a4a4a);
+            .dark-mode .voice-meta {{
+                color: #aaa;
+            }}
+            
+            .voice-controls {{
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }}
+            
+            .audio-player {{
+                background: #f8f9fa;
+                border-radius: 12px;
+                padding: 15px;
+                margin: 15px 0;
+                border: 1px solid #e1e8ed;
+            }}
+            
+            .dark-mode .audio-player {{
+                background: #2a2a3a;
+                border-color: #404040;
+            }}
+            
+            .upload-area {{
+                border: 2px dashed var(--primary-color);
+                border-radius: 16px;
+                padding: 40px;
+                text-align: center;
+                margin: 20px 0;
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+                transition: all 0.3s ease;
+                cursor: pointer;
+            }}
+            
+            .upload-area:hover {{
+                background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+                transform: translateY(-2px);
+            }}
+            
+            .upload-icon {{
+                font-size: 48px;
+                color: var(--primary-color);
+                margin-bottom: 15px;
+            }}
+            
+            /* Voice Grid Layout */
+            .voice-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+                gap: 20px;
+                margin-top: 30px;
+            }}
+            
+            @media (max-width: 768px) {{
+                .voice-grid {{
+                    grid-template-columns: 1fr;
+                }}
             }}
             
             /* Log Viewer */
@@ -1424,40 +1625,50 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                 <div id="voices" class="content-section">
                     <div class="section-header">
                         <h3><i class="fas fa-music"></i> Professional Voice Bank Management</h3>
-                        <button class="btn-primary" onclick="uploadVoice()">
-                            <i class="fas fa-upload"></i> Upload New Voice
+                        <button class="btn-primary" onclick="showUploadModal()">
+                            <i class="fas fa-upload"></i> Add New Voice
                         </button>
                     </div>
                     <div class="section-content">
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <div class="stat-value">{len(voice_files)}</div>
-                                <div class="stat-label">Total Voices</div>
+                                <div class="stat-label"><i class="fas fa-microphone"></i> Total Voices</div>
                             </div>
                             <div class="stat-card">
                                 <div class="stat-value">{sum(float(v['size'].split()[0]) for v in voice_files):.1f} MB</div>
-                                <div class="stat-label">Total Storage</div>
+                                <div class="stat-label"><i class="fas fa-hdd"></i> Total Storage</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-value">High</div>
-                                <div class="stat-label">Quality Rating</div>
+                                <div class="stat-value">Ultra HD</div>
+                                <div class="stat-label"><i class="fas fa-star"></i> Quality Rating</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">{len([v for v in voice_files if 'active' in v.get('status', '')])}</div>
+                                <div class="stat-label"><i class="fas fa-check-circle"></i> Active Voices</div>
                             </div>
                         </div>
                         
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th><i class="fas fa-file-audio"></i> Voice Name</th>
-                                    <th><i class="fas fa-weight"></i> Size</th>
-                                    <th><i class="fas fa-clock"></i> Duration</th>
-                                    <th><i class="fas fa-star"></i> Quality</th>
-                                    <th><i class="fas fa-tools"></i> Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {voice_rows if voice_rows else '<tr><td colspan="5" style="text-align: center; color: #7f8c8d;"><i class="fas fa-info-circle"></i> No voices uploaded yet. Upload your first voice to get started!</td></tr>'}
-                            </tbody>
-                        </table>
+                        <!-- Upload Area -->
+                        <div class="upload-area" onclick="document.getElementById('voiceFileInput').click()">
+                            <div class="upload-icon">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </div>
+                            <h4>Drop your voice files here or click to browse</h4>
+                            <p>Supports MP3, WAV, M4A - Maximum 50MB per file</p>
+                            <input type="file" id="voiceFileInput" style="display: none;" multiple accept=".mp3,.wav,.m4a" onchange="handleVoiceUpload(this.files)">
+                        </div>
+                        
+                        <!-- Voice Cards Grid -->
+                        <div class="voice-grid">
+                            {voice_cards_html if voice_files else '''
+                            <div style="text-align: center; padding: 60px; color: #7f8c8d;">
+                                <i class="fas fa-microphone-slash" style="font-size: 48px; margin-bottom: 20px; color: #bdc3c7;"></i>
+                                <h4>No voices uploaded yet</h4>
+                                <p>Upload your first voice sample to get started with professional TTS generation!</p>
+                            </div>
+                            '''}
+                        </div>
                     </div>
                 </div>
                 
@@ -1742,39 +1953,167 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                 }}
             }}
             
-            // Professional voice management functions
+            // Enhanced voice management functions
             function playVoice(voiceName) {{
-                // Create audio element and play voice preview
-                const audio = new Audio(`/voice-preview/${{voiceName}}`);
-                audio.play().catch(() => {{
-                    alert('🎵 Voice preview not available\\n\\nGenerate a test TTS to hear this voice.');
+                showInfoToast('🎵 Playing voice preview: ' + voiceName);
+                const audio = new Audio(`/voice/${{voiceName}}`);
+                audio.play().catch(error => {{
+                    console.error('Audio play error:', error);
+                    showErrorToast('❌ Could not play voice preview');
+                }});
+            }}
+            
+            function testVoiceGeneration(voiceName) {{
+                const testText = prompt('🎤 Enter test text for TTS generation:', 'Hello! This is a test of my beautiful voice.');
+                if (testText && testText.trim()) {{
+                    showLoadingToast('🎯 Generating TTS with ' + voiceName + '...');
+                    
+                    fetch('/generate-tts', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                        }},
+                        body: JSON.stringify({{
+                            'text': testText,
+                            'voice_name': voiceName,
+                            'speed': 1.0,
+                            'remove_silence': true
+                        }})
+                    }})
+                    .then(response => response.json())
+                    .then(data => {{
+                        if (data.status === 'success') {{
+                            showSuccessToast('✅ TTS generated! Check audio tab or job queue.');
+                            // Optionally play the generated audio
+                            if (data.audio_url) {{
+                                const audio = new Audio(data.audio_url);
+                                audio.play();
+                            }}
+                        }} else {{
+                            showErrorToast('❌ TTS generation failed: ' + (data.error || 'Unknown error'));
+                        }}
+                    }})
+                    .catch(error => {{
+                        console.error('TTS Error:', error);
+                        showErrorToast('❌ Network error during TTS generation');
+                    }});
+                }}
+            }}
+            
+            function downloadVoice(voiceName) {{
+                showInfoToast('⬇️ Downloading voice: ' + voiceName);
+                const link = document.createElement('a');
+                link.href = `/voice/${{voiceName}}`;
+                link.download = voiceName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showSuccessToast('✅ Voice download started!');
+            }}
+            
+            function confirmDeleteVoice(voiceName) {{
+                const modal = createCustomModal(
+                    '🗑️ Delete Voice',
+                    `Are you sure you want to delete "<strong>${{voiceName}}</strong>"?<br><br><span style="color: #e74c3c;">This action cannot be undone!</span>`,
+                    [
+                        {{ text: 'Cancel', class: 'btn-glass', action: 'close' }},
+                        {{ text: 'Delete Forever', class: 'btn-danger', action: () => deleteVoice(voiceName) }}
+                    ]
+                );
+                modal.show();
+            }}
+            
+            function deleteVoice(voiceName) {{
+                showLoadingToast('🗑️ Deleting voice: ' + voiceName + '...');
+                
+                fetch(`/delete-voice/${{voiceName}}`, {{
+                    method: 'DELETE'
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    if (data.status === 'success') {{
+                        showSuccessToast('✅ Voice deleted successfully!');
+                        setTimeout(() => location.reload(), 1500);
+                    }} else {{
+                        showErrorToast('❌ Error deleting voice: ' + (data.error || 'Unknown error'));
+                    }}
+                }})
+                .catch(error => {{
+                    console.error('Delete Error:', error);
+                    showErrorToast('❌ Network error during voice deletion');
+                }});
+            }}
+            
+            function showUploadModal() {{
+                const modal = createCustomModal(
+                    '🎤 Upload New Voice',
+                    `
+                    <div style="text-align: center; padding: 20px;">
+                        <div class="upload-area" onclick="document.getElementById('modalVoiceInput').click()">
+                            <div class="upload-icon">
+                                <i class="fas fa-microphone"></i>
+                            </div>
+                            <h4>Choose your voice file</h4>
+                            <p>Supports MP3, WAV, M4A • Max 50MB<br>Best quality: 5-15 seconds of clear speech</p>
+                        </div>
+                        <input type="file" id="modalVoiceInput" style="display: none;" accept=".mp3,.wav,.m4a" onchange="handleModalVoiceUpload(this.files[0])">
+                    </div>
+                    `,
+                    [
+                        {{ text: 'Close', class: 'btn-glass', action: 'close' }}
+                    ]
+                );
+                modal.show();
+            }}
+            
+            function handleVoiceUpload(files) {{
+                if (files.length === 0) return;
+                
+                for (let i = 0; i < files.length; i++) {{
+                    uploadSingleVoice(files[i]);
+                }}
+            }}
+            
+            function handleModalVoiceUpload(file) {{
+                if (file) {{
+                    uploadSingleVoice(file);
+                    closeModal();
+                }}
+            }}
+            
+            function uploadSingleVoice(file) {{
+                if (file.size > 50 * 1024 * 1024) {{
+                    showErrorToast(`❌ File too large: ${{file.name}} (Max 50MB)`);
+                    return;
+                }}
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                showLoadingToast(`🎤 Uploading voice: ${{file.name}}...`);
+                
+                fetch('/upload-permanent-voice', {{
+                    method: 'POST',
+                    body: formData
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    if (data.status === 'success') {{
+                        showSuccessToast(`✅ Voice uploaded: ${{file.name}}`);
+                        setTimeout(() => location.reload(), 2000);
+                    }} else {{
+                        showErrorToast(`❌ Upload failed: ${{data.error || 'Unknown error'}}`);
+                    }}
+                }})
+                .catch(error => {{
+                    console.error('Upload Error:', error);
+                    showErrorToast(`❌ Upload failed: Network error`);
                 }});
             }}
             
             function testVoice(voiceName) {{
-                const testText = prompt('Enter test text for voice generation:', 'Hello, this is a test of my voice.');
-                if (testText) {{
-                    showLoadingToast('🎤 Generating TTS with voice: ' + voiceName);
-                    // Here you would call the TTS API
-                    setTimeout(() => {{
-                        showSuccessToast('✅ TTS generated successfully!');
-                    }}, 2000);
-                }}
-            }}
-            
-            function deleteVoice(voiceName) {{
-                if (confirm(`🗑️ Delete voice: ${{voiceName}}?\\n\\nThis action cannot be undone.`)) {{
-                    showLoadingToast('Deleting voice...');
-                    // Here you would call the delete API
-                    setTimeout(() => {{
-                        showSuccessToast('Voice deleted successfully!');
-                        location.reload();
-                    }}, 1000);
-                }}
-            }}
-            
-            function uploadVoice() {{
-                alert('🎤 Voice Upload\\n\\nUse the /upload-permanent-voice API endpoint to upload new voices.\\n\\nSupported formats: WAV, MP3, FLAC\\nRecommended: 5-15 seconds, clear speech');
+                // Legacy function for backward compatibility
+                testVoiceGeneration(voiceName);
             }}
             
             // Advanced job management
@@ -1967,6 +2306,119 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                     addLogEntry(levels[randomIndex], messages[randomIndex]);
                 }}
             }}, 10000);
+            
+            // Custom modal system
+            function createCustomModal(title, content, buttons = []) {{
+                const modal = document.createElement('div');
+                modal.className = 'custom-modal';
+                modal.innerHTML = `
+                    <div class="modal-overlay" onclick="closeModal()">
+                        <div class="modal-content" onclick="event.stopPropagation()">
+                            <div class="modal-header">
+                                <h3>${{title}}</h3>
+                                <button class="modal-close" onclick="closeModal()">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                ${{content}}
+                            </div>
+                            <div class="modal-footer">
+                                ${{buttons.map(btn => `<button class="btn-small ${{btn.class}}" onclick="${{btn.action === 'close' ? 'closeModal()' : btn.action.name + '()'}}">${{btn.text}}</button>`).join('')}}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add modal styles if not exists
+                if (!document.getElementById('modal-styles')) {{
+                    const style = document.createElement('style');
+                    style.id = 'modal-styles';
+                    style.textContent = `
+                        .custom-modal {{
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100%;
+                            height: 100%;
+                            z-index: 10000;
+                        }}
+                        .modal-overlay {{
+                            width: 100%;
+                            height: 100%;
+                            background: rgba(0,0,0,0.7);
+                            backdrop-filter: blur(5px);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 20px;
+                        }}
+                        .modal-content {{
+                            background: white;
+                            border-radius: 20px;
+                            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                            max-width: 500px;
+                            width: 100%;
+                            max-height: 80vh;
+                            overflow: hidden;
+                        }}
+                        .dark-mode .modal-content {{
+                            background: var(--dark-card);
+                            color: var(--text-light);
+                        }}
+                        .modal-header {{
+                            padding: 25px 25px 0;
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                        }}
+                        .modal-close {{
+                            background: none;
+                            border: none;
+                            font-size: 18px;
+                            cursor: pointer;
+                            color: #999;
+                            padding: 8px;
+                            border-radius: 50%;
+                            transition: all 0.3s;
+                        }}
+                        .modal-close:hover {{
+                            background: rgba(255,0,0,0.1);
+                            color: #e74c3c;
+                        }}
+                        .modal-body {{
+                            padding: 25px;
+                        }}
+                        .modal-footer {{
+                            padding: 0 25px 25px;
+                            display: flex;
+                            gap: 10px;
+                            justify-content: flex-end;
+                        }}
+                    `;
+                    document.head.appendChild(style);
+                }}
+                
+                return {{
+                    element: modal,
+                    show: () => {{
+                        document.body.appendChild(modal);
+                        setTimeout(() => modal.style.opacity = '1', 10);
+                    }},
+                    hide: () => {{
+                        modal.style.opacity = '0';
+                        setTimeout(() => modal.remove(), 300);
+                    }}
+                }};
+            }}
+            
+            function closeModal() {{
+                const modals = document.querySelectorAll('.custom-modal');
+                modals.forEach(modal => {{
+                    modal.style.opacity = '0';
+                    setTimeout(() => modal.remove(), 300);
+                }});
+            }}
             
             // Auto-refresh for live data (every 30 seconds)
             setInterval(() => {{
@@ -2453,6 +2905,96 @@ async def list_voices():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing voices: {str(e)}")
+
+@app.get("/voice/{voice_name}")
+async def serve_voice_file(voice_name: str):
+    """
+    Serve voice files directly for audio playback in the admin interface.
+    """
+    try:
+        # Find the voice file with any supported extension
+        supported_extensions = ['.wav', '.mp3', '.flac', '.m4a', '.ogg']
+        voice_file = None
+        
+        for ext in supported_extensions:
+            potential_file = os.path.join(REFERENCE_VOICES_DIR, voice_name)
+            if not voice_name.endswith(ext):
+                potential_file = os.path.join(REFERENCE_VOICES_DIR, voice_name + ext)
+            
+            if os.path.exists(potential_file):
+                voice_file = potential_file
+                break
+        
+        # Also check if the voice_name already includes the extension
+        direct_path = os.path.join(REFERENCE_VOICES_DIR, voice_name)
+        if os.path.exists(direct_path):
+            voice_file = direct_path
+        
+        if not voice_file:
+            raise HTTPException(status_code=404, detail=f"Voice file '{voice_name}' not found")
+        
+        # Determine content type based on file extension
+        file_ext = os.path.splitext(voice_file)[1].lower()
+        content_types = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg', 
+            '.flac': 'audio/flac',
+            '.m4a': 'audio/mp4',
+            '.ogg': 'audio/ogg'
+        }
+        
+        content_type = content_types.get(file_ext, 'audio/wav')
+        
+        return FileResponse(
+            voice_file,
+            media_type=content_type,
+            headers={"Accept-Ranges": "bytes"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error serving voice file: {str(e)}")
+
+@app.delete("/delete-voice/{voice_name}")
+async def delete_voice(voice_name: str):
+    """
+    Delete a permanent voice file.
+    """
+    try:
+        # Find the voice file with any supported extension
+        supported_extensions = ['.wav', '.mp3', '.flac', '.m4a', '.ogg']
+        voice_file = None
+        
+        for ext in supported_extensions:
+            potential_file = os.path.join(REFERENCE_VOICES_DIR, voice_name)
+            if not voice_name.endswith(ext):
+                potential_file = os.path.join(REFERENCE_VOICES_DIR, voice_name + ext)
+            
+            if os.path.exists(potential_file):
+                voice_file = potential_file
+                break
+        
+        # Also check if the voice_name already includes the extension
+        direct_path = os.path.join(REFERENCE_VOICES_DIR, voice_name)
+        if os.path.exists(direct_path):
+            voice_file = direct_path
+        
+        if not voice_file:
+            raise HTTPException(status_code=404, detail=f"Voice file '{voice_name}' not found")
+        
+        # Delete the file
+        os.remove(voice_file)
+        
+        return {
+            "status": "success",
+            "message": f"Voice '{voice_name}' deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting voice: {str(e)}")
 
 @app.get("/download-audio/{file_id}")
 async def download_audio(file_id: str):
