@@ -39,13 +39,14 @@ DEFAULT_TTS_MODEL_CFG = [
     json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
 ]
 
-# Default Gradio inference settings
+# Default Gradio inference settings (exact match from Gradio interface)
 DEFAULT_INFERENCE_SETTINGS = {
+    "randomize_seed": True,
+    "seed": 0,
     "remove_silence": False,
-    "cross_fade_duration": 0.15,
-    "nfe_step": 32,
     "speed": 1.0,
-    "seed": -1,  # -1 means random seed
+    "nfe_step": 32,
+    "cross_fade_duration": 0.15,
 }
 
 app = FastAPI(
@@ -74,11 +75,19 @@ class AudioUploadResponse(BaseModel):
     message: str
     duration: Optional[float] = None
 
+class TTSAdvancedSettings(BaseModel):
+    randomize_seed: Optional[bool] = True
+    seed: Optional[int] = 0
+    remove_silence: Optional[bool] = False
+    speed: Optional[float] = 1.0
+    nfe_step: Optional[int] = 32
+    cross_fade_duration: Optional[float] = 0.15
+
 class TTSGenerateRequest(BaseModel):
     audio_file_id: str
     text: str
     ref_text: Optional[str] = ""  # Empty string triggers auto-transcription like Gradio
-    settings: Optional[Dict[str, Any]] = None  # Optional inference settings override
+    settings: Optional[TTSAdvancedSettings] = None  # Advanced settings with validation
 
 class TTSGenerateResponse(BaseModel):
     audio_file_id: str
@@ -129,6 +138,14 @@ async def root():
         },
         "model": DEFAULT_TTS_MODEL,
         "default_settings": DEFAULT_INFERENCE_SETTINGS,
+        "advanced_settings": {
+            "randomize_seed": "bool - Use random seed for each generation",
+            "seed": "int (0-2147483647) - Specific seed for reproducible results",
+            "remove_silence": "bool - Auto-detect and crop long silences", 
+            "speed": "float (0.3-2.0) - Audio playback speed",
+            "nfe_step": "int (4-64) - Number of denoising steps",
+            "cross_fade_duration": "float (0.0-1.0) - Cross-fade duration in seconds"
+        }
     }
 
 @app.get("/health")
@@ -199,9 +216,10 @@ async def tts_generate(
     """
     Generate TTS audio using uploaded reference audio and input text.
     
-    - Uses F5-TTS v1 model with default Gradio settings
+    - Uses F5-TTS v1 model with exact Gradio default settings
     - Automatically transcribes reference audio (just like Gradio web interface)
     - Leave ref_text empty for auto-transcription, or provide custom reference text
+    - All Gradio advanced settings available: randomize_seed, seed, remove_silence, speed, nfe_step, cross_fade_duration
     - Returns generated audio file that can be downloaded
     """
     if not F5TTS_ema_model or not vocoder:
@@ -245,14 +263,14 @@ async def tts_generate(
             request.text,
             F5TTS_ema_model,
             vocoder,
-            cross_fade_duration=settings["cross_fade_duration"],
-            nfe_step=settings["nfe_step"],
-            speed=settings["speed"],
+            cross_fade_duration=final_settings["cross_fade_duration"],
+            nfe_step=final_settings["nfe_step"],
+            speed=final_settings["speed"],
             show_info=print,
         )
         
         # Remove silence if requested
-        if settings["remove_silence"]:
+        if final_settings["remove_silence"]:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 temp_path = f.name
             try:
@@ -278,7 +296,7 @@ async def tts_generate(
             audio_file_id=output_file_id,
             ref_text=ref_text,
             message="TTS audio generated successfully",
-            seed_used=settings["seed"]
+            seed_used=final_settings["seed"]
         )
         
     except Exception as e:
