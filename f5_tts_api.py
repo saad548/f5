@@ -10,8 +10,15 @@ import uuid
 import shutil
 import json
 import re
+import time
+import asyncio
+import threading
+from datetime import datetime, timedelta
+from enum import Enum
+from concurrent.futures import ThreadPoolExecutor
+import queue
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import torch
 import numpy as np
 import soundfile as sf
@@ -50,6 +57,433 @@ DEFAULT_INFERENCE_SETTINGS = {
     "cross_fade_duration": 0.15,
 }
 
+# Job Queue Models
+class JobStatus(str, Enum):
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class JobType(str, Enum):
+    TTS_GENERATE = "tts_generate"
+    TTS_PERMANENT = "tts_permanent"
+    VOICE_CLONING = "voice_cloning"
+
+class Job:
+    def __init__(self, job_id: str, job_type: JobType, parameters: Dict[str, Any], priority: int = 0):
+        self.job_id = job_id
+        self.job_type = job_type
+        self.parameters = parameters
+        self.priority = priority
+        self.status = JobStatus.QUEUED
+        self.created_at = datetime.now()
+        self.started_at: Optional[datetime] = None
+        self.completed_at: Optional[datetime] = None
+        self.result: Optional[Dict[str, Any]] = None
+        self.error: Optional[str] = None
+        self.progress: int = 0
+        self.estimated_completion: Optional[datetime] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "job_type": self.job_type.value,
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "result": self.result,
+            "error": self.error,
+            "progress": self.progress,
+            "estimated_completion": self.estimated_completion.isoformat() if self.estimated_completion else None,
+        }
+
+class JobRequest(BaseModel):
+    job_type: JobType
+    parameters: Dict[str, Any]
+    priority: int = 0
+
+# Job Queue Manager
+class JobQueueManager:
+    def __init__(self, max_workers: int = 1):
+        self.jobs: Dict[str, Job] = {}
+        self.job_queue = queue.PriorityQueue()
+        self.max_workers = max_workers
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.is_running = True
+        self.worker_thread = None
+        self.current_job_id: Optional[str] = None
+        
+        # Start the background worker
+        self._start_worker()
+    
+    def _start_worker(self):
+        """Start the background worker thread"""
+        self.worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self.worker_thread.start()
+    
+    def _worker(self):
+        """Background worker that processes jobs from the queue"""
+        while self.is_running:
+            try:
+                # Get next job with timeout to allow checking is_running
+                priority, job_id = self.job_queue.get(timeout=1.0)
+                
+                if job_id in self.jobs:
+                    job = self.jobs[job_id]
+                    self.current_job_id = job_id
+                    
+                    try:
+                        # Update job status
+                        job.status = JobStatus.PROCESSING
+                        job.started_at = datetime.now()
+                        job.progress = 10
+                        
+                        # Estimate completion time (rough estimate: 1-2 minutes for TTS)
+                        job.estimated_completion = datetime.now() + timedelta(minutes=2)
+                        
+                        print(f"Processing job {job_id} of type {job.job_type}")
+                        
+                        # Process the job based on type
+                        if job.job_type == JobType.TTS_GENERATE:
+                            result = self._process_tts_generate(job)
+                        elif job.job_type == JobType.TTS_PERMANENT:
+                            result = self._process_tts_permanent(job)
+                        elif job.job_type == JobType.VOICE_CLONING:
+                            result = self._process_voice_cloning(job)
+                        else:
+                            raise ValueError(f"Unknown job type: {job.job_type}")
+                        
+                        # Job completed successfully
+                        job.status = JobStatus.COMPLETED
+                        job.completed_at = datetime.now()
+                        job.result = result
+                        job.progress = 100
+                        job.estimated_completion = None
+                        
+                        print(f"Job {job_id} completed successfully")
+                        
+                    except Exception as e:
+                        # Job failed
+                        job.status = JobStatus.FAILED
+                        job.completed_at = datetime.now()
+                        job.error = str(e)
+                        job.progress = 0
+                        job.estimated_completion = None
+                        
+                        print(f"Job {job_id} failed: {e}")
+                    
+                    finally:
+                        self.current_job_id = None
+                        self.job_queue.task_done()
+                
+            except queue.Empty:
+                # Timeout occurred, continue loop to check is_running
+                continue
+            except Exception as e:
+                print(f"Worker error: {e}")
+                continue
+    
+    def submit_job(self, job_type: JobType, parameters: Dict[str, Any], priority: int = 0) -> str:
+        """Submit a new job to the queue"""
+        job_id = str(uuid.uuid4())
+        job = Job(job_id, job_type, parameters, priority)
+        
+        self.jobs[job_id] = job
+        # Use negative priority for priority queue (smaller numbers = higher priority)
+        self.job_queue.put((-priority, job_id))
+        
+        print(f"Job {job_id} submitted to queue")
+        return job_id
+    
+    def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get the current status of a job"""
+        if job_id in self.jobs:
+            return self.jobs[job_id].to_dict()
+        return None
+    
+    def get_job_result(self, job_id: str) -> Optional[Any]:
+        """Get the result of a completed job"""
+        if job_id in self.jobs and self.jobs[job_id].status == JobStatus.COMPLETED:
+            return self.jobs[job_id].result
+        return None
+    
+    def get_queue_status(self) -> Dict[str, Any]:
+        """Get overall queue status"""
+        job_counts = {status.value: 0 for status in JobStatus}
+        for job in self.jobs.values():
+            job_counts[job.status.value] += 1
+        
+        return {
+            "queue_size": self.job_queue.qsize(),
+            "total_jobs": len(self.jobs),
+            "job_counts": job_counts,
+            "current_job": self.current_job_id,
+        }
+    
+    def cleanup_old_jobs(self, max_age_hours: int = 24):
+        """Remove old completed/failed jobs"""
+        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+        jobs_to_remove = []
+        
+        for job_id, job in self.jobs.items():
+            if (job.status in [JobStatus.COMPLETED, JobStatus.FAILED] and 
+                job.completed_at and job.completed_at < cutoff_time):
+                jobs_to_remove.append(job_id)
+        
+        for job_id in jobs_to_remove:
+            del self.jobs[job_id]
+        
+        return len(jobs_to_remove)
+    
+    def _process_tts_generate(self, job: Job) -> Dict[str, Any]:
+        """Process TTS generation job"""
+        params = job.parameters
+        job.progress = 20
+        
+        # Load the reference audio file
+        ref_audio_path = params["ref_audio_path"]
+        if not os.path.exists(ref_audio_path):
+            raise FileNotFoundError(f"Reference audio file not found: {ref_audio_path}")
+        
+        job.progress = 30
+        
+        # Get inference settings
+        inference_settings = params.get("inference_settings", DEFAULT_INFERENCE_SETTINGS.copy())
+        
+        # Handle seed logic like Gradio
+        if inference_settings["randomize_seed"]:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        elif inference_settings["seed"] < 0 or inference_settings["seed"] > 2**31 - 1:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        
+        torch.manual_seed(inference_settings["seed"])
+        job.progress = 40
+        
+        # Preprocess reference audio and get/transcribe reference text
+        ref_text_input = params.get("ref_text", "")
+        ref_audio, ref_text = preprocess_ref_audio_text(
+            ref_audio_path, 
+            ref_text_input,  # Empty string triggers auto-transcription
+            show_info=print
+        )
+        job.progress = 60
+        
+        # Generate TTS audio
+        final_wave, final_sample_rate, combined_spectrogram = infer_process(
+            ref_audio,
+            ref_text,
+            params["gen_text"],
+            F5TTS_ema_model,
+            vocoder,
+            cross_fade_duration=inference_settings["cross_fade_duration"],
+            nfe_step=inference_settings["nfe_step"],
+            speed=inference_settings["speed"],
+            show_info=print,
+        )
+        job.progress = 80
+        
+        # Remove silence if requested
+        if inference_settings["remove_silence"]:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_path = f.name
+            try:
+                sf.write(temp_path, final_wave, final_sample_rate)
+                remove_silence_for_generated_wav(temp_path)
+                final_wave, _ = torch.load(temp_path)
+                final_wave = final_wave.squeeze().cpu().numpy()
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        # Save generated audio to temporary file
+        output_file_id = str(uuid.uuid4())
+        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_output_{output_file_id}.wav")
+        sf.write(output_file_path, final_wave, final_sample_rate)
+        
+        # Store output file mapping
+        uploaded_files[output_file_id] = output_file_path
+        job.progress = 90
+        
+        return {
+            "output_file_id": output_file_id,
+            "output_path": output_file_path,
+            "ref_text": ref_text,
+            "gen_text": params["gen_text"],
+            "seed": inference_settings["seed"]
+        }
+    
+    def _process_tts_permanent(self, job: Job) -> Dict[str, Any]:
+        """Process permanent voice TTS job"""
+        params = job.parameters
+        job.progress = 20
+        
+        voice_name = params["voice_name"]
+        voice_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}.wav")
+        
+        if not os.path.exists(voice_path):
+            raise FileNotFoundError(f"Permanent voice not found: {voice_name}")
+        
+        job.progress = 30
+        
+        # Load reference text for this voice
+        ref_text_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}_ref.txt")
+        if os.path.exists(ref_text_path):
+            with open(ref_text_path, "r", encoding="utf-8") as f:
+                ref_text_input = f.read().strip()
+        else:
+            # Auto-transcribe if no ref text file
+            ref_text_input = ""
+        
+        job.progress = 40
+        
+        # Get inference settings
+        inference_settings = params.get("inference_settings", DEFAULT_INFERENCE_SETTINGS.copy())
+        
+        # Handle seed logic like Gradio
+        if inference_settings["randomize_seed"]:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        elif inference_settings["seed"] < 0 or inference_settings["seed"] > 2**31 - 1:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        
+        torch.manual_seed(inference_settings["seed"])
+        
+        # Preprocess reference audio and get/transcribe reference text
+        ref_audio, ref_text = preprocess_ref_audio_text(
+            voice_path, 
+            ref_text_input,  # Empty string triggers auto-transcription
+            show_info=print
+        )
+        job.progress = 60
+        
+        # Generate TTS audio
+        final_wave, final_sample_rate, combined_spectrogram = infer_process(
+            ref_audio,
+            ref_text,
+            params["gen_text"],
+            F5TTS_ema_model,
+            vocoder,
+            cross_fade_duration=inference_settings["cross_fade_duration"],
+            nfe_step=inference_settings["nfe_step"],
+            speed=inference_settings["speed"],
+            show_info=print,
+        )
+        job.progress = 80
+        
+        # Remove silence if requested
+        if inference_settings["remove_silence"]:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_path = f.name
+            try:
+                sf.write(temp_path, final_wave, final_sample_rate)
+                remove_silence_for_generated_wav(temp_path)
+                final_wave, _ = torch.load(temp_path)
+                final_wave = final_wave.squeeze().cpu().numpy()
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        # Save generated audio to temporary file
+        output_file_id = str(uuid.uuid4())
+        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_output_{output_file_id}.wav")
+        sf.write(output_file_path, final_wave, final_sample_rate)
+        
+        # Store output file mapping
+        uploaded_files[output_file_id] = output_file_path
+        job.progress = 90
+        
+        return {
+            "output_file_id": output_file_id,
+            "output_path": output_file_path,
+            "voice_name": voice_name,
+            "ref_text": ref_text,
+            "gen_text": params["gen_text"],
+            "seed": inference_settings["seed"]
+        }
+    
+    def _process_voice_cloning(self, job: Job) -> Dict[str, Any]:
+        """Process voice cloning job"""
+        params = job.parameters
+        job.progress = 20
+        
+        # Load the uploaded audio file
+        audio_file_id = params["audio_file_id"]
+        if audio_file_id not in uploaded_files:
+            raise ValueError(f"Audio file not found: {audio_file_id}")
+        
+        ref_audio_path = uploaded_files[audio_file_id]
+        job.progress = 30
+        
+        # Get inference settings
+        inference_settings = params.get("inference_settings", DEFAULT_INFERENCE_SETTINGS.copy())
+        
+        # Handle seed logic like Gradio
+        if inference_settings["randomize_seed"]:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        elif inference_settings["seed"] < 0 or inference_settings["seed"] > 2**31 - 1:
+            inference_settings["seed"] = np.random.randint(0, 2**31 - 1)
+        
+        torch.manual_seed(inference_settings["seed"])
+        job.progress = 40
+        
+        # Preprocess reference audio and auto-transcribe
+        ref_audio, ref_text = preprocess_ref_audio_text(
+            ref_audio_path, 
+            "",  # Empty string triggers auto-transcription
+            show_info=print
+        )
+        job.progress = 60
+        
+        # Generate TTS audio
+        final_wave, final_sample_rate, combined_spectrogram = infer_process(
+            ref_audio,
+            ref_text,
+            params["gen_text"],
+            F5TTS_ema_model,
+            vocoder,
+            cross_fade_duration=inference_settings["cross_fade_duration"],
+            nfe_step=inference_settings["nfe_step"],
+            speed=inference_settings["speed"],
+            show_info=print,
+        )
+        job.progress = 80
+        
+        # Remove silence if requested
+        if inference_settings["remove_silence"]:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_path = f.name
+            try:
+                sf.write(temp_path, final_wave, final_sample_rate)
+                remove_silence_for_generated_wav(temp_path)
+                final_wave, _ = torch.load(temp_path)
+                final_wave = final_wave.squeeze().cpu().numpy()
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        # Save generated audio to temporary file
+        output_file_id = str(uuid.uuid4())
+        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_output_{output_file_id}.wav")
+        sf.write(output_file_path, final_wave, final_sample_rate)
+        
+        # Store output file mapping
+        uploaded_files[output_file_id] = output_file_path
+        job.progress = 90
+        
+        return {
+            "output_file_id": output_file_id,
+            "output_path": output_file_path,
+            "ref_text": ref_text,
+            "gen_text": params["gen_text"],
+            "seed": inference_settings["seed"]
+        }
+    
+    def stop(self):
+        """Stop the job queue manager"""
+        self.is_running = False
+        if self.worker_thread:
+            self.worker_thread.join(timeout=5)
+
 app = FastAPI(
     title="F5-TTS API",
     description="REST API for F5-TTS Text-to-Speech model with automatic reference text transcription",
@@ -69,6 +503,9 @@ app.add_middleware(
 vocoder = None
 F5TTS_ema_model = None
 uploaded_files: Dict[str, str] = {}  # file_id -> file_path mapping
+
+# Initialize job queue manager
+job_queue_manager = None
 
 # Permanent storage for reference voices
 REFERENCE_VOICES_DIR = "reference_voices"
@@ -135,16 +572,33 @@ def cleanup_file(file_path: str):
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize models on startup."""
-    global vocoder, F5TTS_ema_model
+    """Initialize models and job queue on startup."""
+    global vocoder, F5TTS_ema_model, job_queue_manager
     try:
         print("Initializing F5-TTS API server...")
         vocoder = load_vocoder()
         F5TTS_ema_model = load_f5tts()
-        print("✅ Models loaded successfully!")
+        
+        # Initialize job queue manager
+        job_queue_manager = JobQueueManager(max_workers=1)
+        print("✅ Job queue manager initialized!")
+        
+        print("✅ Models and job queue loaded successfully!")
     except Exception as e:
-        print(f"❌ Error loading models: {e}")
+        print(f"❌ Error loading models/job queue: {e}")
         raise
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown."""
+    global job_queue_manager
+    try:
+        if job_queue_manager:
+            print("Shutting down job queue manager...")
+            job_queue_manager.stop()
+            print("✅ Job queue manager stopped!")
+    except Exception as e:
+        print(f"❌ Error during shutdown: {e}")
 
 @app.get("/")
 async def root():
@@ -693,7 +1147,303 @@ async def list_audio():
                 "exists": os.path.exists(file_path)
             }
             for file_id, file_path in uploaded_files.items()
-        ]
+        ],
+        "total_files": len(uploaded_files)
+    }
+
+# Job Queue Endpoints
+@app.post("/jobs/submit")
+async def submit_job(request: JobRequest):
+    """
+    Submit a new job to the processing queue.
+    
+    Job types:
+    - tts_generate: Generate TTS using uploaded audio file
+    - tts_permanent: Generate TTS using permanent voice
+    - voice_cloning: Clone a voice and generate TTS
+    
+    Returns job_id for tracking the job status and retrieving results.
+    """
+    if not job_queue_manager:
+        raise HTTPException(status_code=503, detail="Job queue not initialized")
+    
+    if not F5TTS_ema_model or not vocoder:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+    
+    try:
+        # Validate job parameters based on job type
+        params = request.parameters
+        
+        if request.job_type == JobType.TTS_GENERATE:
+            if "ref_audio_path" not in params or "gen_text" not in params:
+                raise HTTPException(status_code=400, detail="TTS generate jobs require 'ref_audio_path' and 'gen_text' parameters")
+        
+        elif request.job_type == JobType.TTS_PERMANENT:
+            if "voice_name" not in params or "gen_text" not in params:
+                raise HTTPException(status_code=400, detail="Permanent TTS jobs require 'voice_name' and 'gen_text' parameters")
+        
+        elif request.job_type == JobType.VOICE_CLONING:
+            if "audio_file_id" not in params or "gen_text" not in params:
+                raise HTTPException(status_code=400, detail="Voice cloning jobs require 'audio_file_id' and 'gen_text' parameters")
+        
+        # Submit job to queue
+        job_id = job_queue_manager.submit_job(
+            job_type=request.job_type,
+            parameters=params,
+            priority=request.priority
+        )
+        
+        return {
+            "job_id": job_id,
+            "message": "Job submitted successfully",
+            "queue_position": job_queue_manager.job_queue.qsize()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error submitting job: {str(e)}")
+
+@app.get("/jobs/{job_id}/status")
+async def get_job_status(job_id: str):
+    """
+    Get the current status of a submitted job.
+    """
+    if not job_queue_manager:
+        raise HTTPException(status_code=503, detail="Job queue not initialized")
+    
+    job_status = job_queue_manager.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return job_status
+
+@app.get("/jobs/{job_id}/result")
+async def get_job_result(job_id: str):
+    """
+    Get the result of a completed job.
+    Returns the output file_id that can be used with /download-audio endpoint.
+    """
+    if not job_queue_manager:
+        raise HTTPException(status_code=503, detail="Job queue not initialized")
+    
+    job_status = job_queue_manager.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job_status["status"] != "completed":
+        raise HTTPException(status_code=400, detail=f"Job not completed. Current status: {job_status['status']}")
+    
+    result = job_queue_manager.get_job_result(job_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Job result not found")
+    
+    return result
+
+@app.get("/jobs/queue-status")
+async def get_queue_status():
+    """
+    Get overall job queue status and statistics.
+    """
+    if not job_queue_manager:
+        raise HTTPException(status_code=503, detail="Job queue not initialized")
+    
+    return job_queue_manager.get_queue_status()
+
+@app.post("/jobs/cleanup")
+async def cleanup_old_jobs(max_age_hours: int = 24):
+    """
+    Remove old completed/failed jobs from memory.
+    Default: remove jobs older than 24 hours.
+    """
+    if not job_queue_manager:
+        raise HTTPException(status_code=503, detail="Job queue not initialized")
+    
+    cleaned_count = job_queue_manager.cleanup_old_jobs(max_age_hours)
+    return {
+        "message": f"Cleaned up {cleaned_count} old jobs",
+        "cleaned_count": cleaned_count
+    }
+
+# Convenient job submission endpoints (async versions of existing endpoints)
+@app.post("/jobs/tts-generate-async")
+async def submit_tts_generate_job(
+    audio_file_id: str = Form(...),
+    text: str = Form(...),
+    ref_text: str = Form(""),
+    randomize_seed: bool = Form(True),
+    seed: int = Form(0),
+    remove_silence: bool = Form(False),
+    speed: float = Form(1.0),
+    nfe_step: int = Form(32),
+    cross_fade_duration: float = Form(0.15),
+    priority: int = Form(0)
+):
+    """
+    Submit TTS generation job (async version of /tts-generate).
+    Returns immediately with job_id for tracking.
+    """
+    if audio_file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail="Audio file not found. Please upload audio first.")
+    
+    ref_audio_path = uploaded_files[audio_file_id]
+    if not os.path.exists(ref_audio_path):
+        raise HTTPException(status_code=404, detail="Reference audio file has expired. Please re-upload.")
+    
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
+    
+    # Prepare inference settings
+    inference_settings = {
+        "randomize_seed": randomize_seed,
+        "seed": seed,
+        "remove_silence": remove_silence,
+        "speed": speed,
+        "nfe_step": nfe_step,
+        "cross_fade_duration": cross_fade_duration,
+    }
+    
+    # Validate settings
+    if speed < 0.3 or speed > 2.0:
+        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
+    if nfe_step < 4 or nfe_step > 64:
+        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
+    if cross_fade_duration < 0.0 or cross_fade_duration > 1.0:
+        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
+    
+    # Submit job
+    job_id = job_queue_manager.submit_job(
+        job_type=JobType.TTS_GENERATE,
+        parameters={
+            "ref_audio_path": ref_audio_path,
+            "ref_text": ref_text,
+            "gen_text": text,
+            "inference_settings": inference_settings
+        },
+        priority=priority
+    )
+    
+    return {
+        "job_id": job_id,
+        "message": "TTS generation job submitted successfully",
+        "queue_position": job_queue_manager.job_queue.qsize()
+    }
+
+@app.post("/jobs/tts-permanent-async")
+async def submit_tts_permanent_job(
+    voice_name: str = Form(...),
+    text: str = Form(...),
+    randomize_seed: bool = Form(True),
+    seed: int = Form(0),
+    remove_silence: bool = Form(False),
+    speed: float = Form(1.0),
+    nfe_step: int = Form(32),
+    cross_fade_duration: float = Form(0.15),
+    priority: int = Form(0)
+):
+    """
+    Submit permanent voice TTS job (async version of /tts-permanent).
+    Returns immediately with job_id for tracking.
+    """
+    voice_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}.wav")
+    if not os.path.exists(voice_path):
+        raise HTTPException(status_code=404, detail=f"Permanent voice '{voice_name}' not found")
+    
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
+    
+    # Prepare inference settings
+    inference_settings = {
+        "randomize_seed": randomize_seed,
+        "seed": seed,
+        "remove_silence": remove_silence,
+        "speed": speed,
+        "nfe_step": nfe_step,
+        "cross_fade_duration": cross_fade_duration,
+    }
+    
+    # Validate settings
+    if speed < 0.3 or speed > 2.0:
+        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
+    if nfe_step < 4 or nfe_step > 64:
+        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
+    if cross_fade_duration < 0.0 or cross_fade_duration > 1.0:
+        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
+    
+    # Submit job
+    job_id = job_queue_manager.submit_job(
+        job_type=JobType.TTS_PERMANENT,
+        parameters={
+            "voice_name": voice_name,
+            "gen_text": text,
+            "inference_settings": inference_settings
+        },
+        priority=priority
+    )
+    
+    return {
+        "job_id": job_id,
+        "message": "Permanent voice TTS job submitted successfully",
+        "queue_position": job_queue_manager.job_queue.qsize()
+    }
+
+@app.post("/jobs/voice-cloning-async")
+async def submit_voice_cloning_job(
+    audio_file_id: str = Form(...),
+    text: str = Form(...),
+    randomize_seed: bool = Form(True),
+    seed: int = Form(0),
+    remove_silence: bool = Form(False),
+    speed: float = Form(1.0),
+    nfe_step: int = Form(32),
+    cross_fade_duration: float = Form(0.15),
+    priority: int = Form(0)
+):
+    """
+    Submit voice cloning job (async version of /voice-cloning).
+    Returns immediately with job_id for tracking.
+    """
+    if audio_file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail="Audio file not found. Please upload audio first.")
+    
+    ref_audio_path = uploaded_files[audio_file_id]
+    if not os.path.exists(ref_audio_path):
+        raise HTTPException(status_code=404, detail="Reference audio file has expired. Please re-upload.")
+    
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
+    
+    # Prepare inference settings
+    inference_settings = {
+        "randomize_seed": randomize_seed,
+        "seed": seed,
+        "remove_silence": remove_silence,
+        "speed": speed,
+        "nfe_step": nfe_step,
+        "cross_fade_duration": cross_fade_duration,
+    }
+    
+    # Validate settings
+    if speed < 0.3 or speed > 2.0:
+        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
+    if nfe_step < 4 or nfe_step > 64:
+        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
+    if cross_fade_duration < 0.0 or cross_fade_duration > 1.0:
+        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
+    
+    # Submit job
+    job_id = job_queue_manager.submit_job(
+        job_type=JobType.VOICE_CLONING,
+        parameters={
+            "audio_file_id": audio_file_id,
+            "gen_text": text,
+            "inference_settings": inference_settings
+        },
+        priority=priority
+    )
+    
+    return {
+        "job_id": job_id,
+        "message": "Voice cloning job submitted successfully",
+        "queue_position": job_queue_manager.job_queue.qsize()
     }
 
 if __name__ == "__main__":
