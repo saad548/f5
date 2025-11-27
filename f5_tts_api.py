@@ -2540,7 +2540,8 @@ async def upload_audio(
 @app.post("/upload-permanent-voice", response_model=PermanentVoiceUploadResponse)
 async def upload_permanent_voice(
     voice_name: str = Form(..., description="Custom name for the voice (e.g., 'adam', 'sarah', 'narrator')"),
-    audio_file: UploadFile = File(..., description="Reference audio file (WAV, MP3, etc.)")
+    audio_file: UploadFile = File(..., description="Reference audio file (WAV, MP3, etc.)"),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Upload a permanent reference voice with a custom readable name.
@@ -2587,7 +2588,8 @@ async def upload_permanent_voice(
 @app.post("/tts-generate", response_model=TTSGenerateResponse)
 async def tts_generate(
     background_tasks: BackgroundTasks,
-    request: TTSGenerateRequest
+    request: TTSGenerateRequest,
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Generate TTS audio using uploaded reference audio and input text.
@@ -2692,7 +2694,10 @@ async def tts_generate(
         raise HTTPException(status_code=500, detail=f"Error generating TTS audio: {str(e)}")
 
 @app.post("/tts-permanent", response_model=TTSGenerateResponse)
-async def tts_permanent(request: PermanentTTSRequest):
+async def tts_permanent(
+    request: PermanentTTSRequest,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Generate TTS using a permanent reference voice by name.
     
@@ -2803,7 +2808,8 @@ async def voice_cloning(
     remove_silence: bool = Form(False, description="Remove silences"),
     speed: float = Form(1.0, description="Speed (0.3-2.0)"),
     nfe_step: int = Form(32, description="NFE steps (4-64)"),
-    cross_fade_duration: float = Form(0.15, description="Cross-fade duration (0.0-1.0)")
+    cross_fade_duration: float = Form(0.15, description="Cross-fade duration (0.0-1.0)"),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Voice cloning: Upload audio + generate TTS + delete reference in one call.
@@ -3000,7 +3006,10 @@ async def serve_voice_file(voice_name: str, api_key_valid: bool = Depends(verify
         raise HTTPException(status_code=500, detail=f"Error serving voice file: {str(e)}")
 
 @app.delete("/delete-voice/{voice_name}")
-async def delete_voice(voice_name: str):
+async def delete_voice(
+    voice_name: str,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Delete a permanent voice file.
     """
@@ -3058,7 +3067,10 @@ async def download_audio(file_id: str, api_key_valid: bool = Depends(verify_api_
     )
 
 @app.delete("/audio/{file_id}")
-async def delete_audio(file_id: str):
+async def delete_audio(
+    file_id: str,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Delete uploaded/generated audio file.
     """
@@ -3075,7 +3087,7 @@ async def delete_audio(file_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting audio file: {str(e)}")
 
 @app.get("/list-audio")
-async def list_audio():
+async def list_audio(api_key_valid: bool = Depends(verify_api_key)):
     """
     List all uploaded/generated audio files.
     """
@@ -3092,7 +3104,10 @@ async def list_audio():
 
 # Job Queue Endpoints
 @app.post("/jobs/submit")
-async def submit_job(request: JobRequest):
+async def submit_job(
+    request: JobRequest,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Submit a new job to the processing queue.
     
@@ -3142,7 +3157,10 @@ async def submit_job(request: JobRequest):
         raise HTTPException(status_code=500, detail=f"Error submitting job: {str(e)}")
 
 @app.get("/jobs/{job_id}/status")
-async def get_job_status(job_id: str):
+async def get_job_status(
+    job_id: str,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Get the current status of a submitted job.
     """
@@ -3156,7 +3174,10 @@ async def get_job_status(job_id: str):
     return job_status
 
 @app.get("/jobs/{job_id}/result")
-async def get_job_result(job_id: str):
+async def get_job_result(
+    job_id: str,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Get the result of a completed job.
     Returns the output file_id that can be used with /download-audio endpoint.
@@ -3178,7 +3199,7 @@ async def get_job_result(job_id: str):
     return result
 
 @app.get("/jobs/queue-status")
-async def get_queue_status():
+async def get_queue_status(api_key_valid: bool = Depends(verify_api_key)):
     """
     Get overall job queue status and statistics.
     """
@@ -3188,7 +3209,10 @@ async def get_queue_status():
     return job_queue_manager.get_queue_status()
 
 @app.post("/jobs/cleanup")
-async def cleanup_old_jobs(max_age_hours: int = 24):
+async def cleanup_old_jobs(
+    max_age_hours: int = 24,
+    api_key_valid: bool = Depends(verify_api_key)
+):
     """
     Remove old completed/failed jobs from memory.
     Default: remove jobs older than 24 hours.
@@ -3214,7 +3238,8 @@ async def submit_tts_generate_job(
     speed: float = Form(1.0),
     nfe_step: int = Form(32),
     cross_fade_duration: float = Form(0.15),
-    priority: int = Form(0)
+    priority: int = Form(0),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Submit TTS generation job (async version of /tts-generate).
@@ -3276,7 +3301,8 @@ async def submit_tts_permanent_job(
     speed: float = Form(1.0),
     nfe_step: int = Form(32),
     cross_fade_duration: float = Form(0.15),
-    priority: int = Form(0)
+    priority: int = Form(0),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Submit permanent voice TTS job (async version of /tts-permanent).
@@ -3335,7 +3361,8 @@ async def submit_voice_cloning_job(
     speed: float = Form(1.0),
     nfe_step: int = Form(32),
     cross_fade_duration: float = Form(0.15),
-    priority: int = Form(0)
+    priority: int = Form(0),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Submit voice cloning job (async version of /voice-cloning).
