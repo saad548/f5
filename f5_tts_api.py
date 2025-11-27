@@ -666,7 +666,13 @@ async def health_check():
     }
 
 # Admin Panel Endpoint
-@app.get("/admin", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+@app.get("/admin")
+async def admin_panel():
+    """Simple admin test"""
+    return {"message": "Admin endpoint working!", "status": "success"}
+
+# Full Admin Dashboard
+@app.get("/admin-dashboard", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
 async def admin_panel():
     """Complete Admin Dashboard - Single Page Interface"""
     
