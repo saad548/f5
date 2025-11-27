@@ -77,7 +77,7 @@ class AudioUploadResponse(BaseModel):
 class TTSGenerateRequest(BaseModel):
     audio_file_id: str
     text: str
-    ref_text: Optional[str] = None  # Optional reference text override
+    ref_text: Optional[str] = ""  # Empty string triggers auto-transcription like Gradio
     settings: Optional[Dict[str, Any]] = None  # Optional inference settings override
 
 class TTSGenerateResponse(BaseModel):
@@ -177,8 +177,7 @@ async def upload_audio(
         except:
             duration = None
         
-        # Schedule cleanup after 1 hour
-        background_tasks.add_task(cleanup_file, temp_file_path)
+        # Note: Files will be cleaned up when server restarts or manually deleted
         
         return AudioUploadResponse(
             file_id=file_id,
@@ -201,7 +200,8 @@ async def tts_generate(
     Generate TTS audio using uploaded reference audio and input text.
     
     - Uses F5-TTS v1 model with default Gradio settings
-    - Automatically transcribes reference audio if no ref_text provided
+    - Automatically transcribes reference audio (just like Gradio web interface)
+    - Leave ref_text empty for auto-transcription, or provide custom reference text
     - Returns generated audio file that can be downloaded
     """
     if not F5TTS_ema_model or not vocoder:
@@ -230,9 +230,11 @@ async def tts_generate(
         torch.manual_seed(settings["seed"])
         
         # Preprocess reference audio and get/transcribe reference text
+        # If ref_text is empty or None, auto-transcribe like Gradio
+        ref_text_input = request.ref_text if request.ref_text and request.ref_text.strip() else ""
         ref_audio, ref_text = preprocess_ref_audio_text(
             ref_audio_path, 
-            request.ref_text or "",  # Use provided ref_text or empty string to trigger auto-transcription
+            ref_text_input,  # Empty string triggers auto-transcription
             show_info=print
         )
         
@@ -270,8 +272,7 @@ async def tts_generate(
         # Store output file mapping
         uploaded_files[output_file_id] = output_file_path
         
-        # Schedule cleanup after 1 hour
-        background_tasks.add_task(cleanup_file, output_file_path)
+        # Note: Files will be cleaned up when server restarts or manually deleted
         
         return TTSGenerateResponse(
             audio_file_id=output_file_id,
