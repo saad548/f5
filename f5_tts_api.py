@@ -236,17 +236,30 @@ async def tts_generate(
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
     
-    # Merge settings with defaults
-    settings = DEFAULT_INFERENCE_SETTINGS.copy()
+    # Merge settings with defaults and validate
+    final_settings = DEFAULT_INFERENCE_SETTINGS.copy()
     if request.settings:
-        settings.update(request.settings)
+        # Convert Pydantic model to dict and merge
+        user_settings = request.settings.model_dump(exclude_unset=True)
+        final_settings.update(user_settings)
+    
+    # Validate and adjust settings
+    if final_settings["speed"] < 0.3 or final_settings["speed"] > 2.0:
+        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
+    if final_settings["nfe_step"] < 4 or final_settings["nfe_step"] > 64:
+        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
+    if final_settings["cross_fade_duration"] < 0.0 or final_settings["cross_fade_duration"] > 1.0:
+        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
+    
+    # Handle seed logic like Gradio
+    if final_settings["randomize_seed"]:
+        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
+    elif final_settings["seed"] < 0 or final_settings["seed"] > 2**31 - 1:
+        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
+    
+    torch.manual_seed(final_settings["seed"])
     
     try:
-        # Set random seed if not specified
-        if settings["seed"] < 0 or settings["seed"] > 2**31 - 1:
-            settings["seed"] = np.random.randint(0, 2**31 - 1)
-        torch.manual_seed(settings["seed"])
-        
         # Preprocess reference audio and get/transcribe reference text
         # If ref_text is empty or None, auto-transcribe like Gradio
         ref_text_input = request.ref_text if request.ref_text and request.ref_text.strip() else ""
