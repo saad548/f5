@@ -665,18 +665,8 @@ async def health_check():
         "vocoder_loaded": vocoder is not None,
     }
 
-@app.get("/admin")
-async def admin_simple():
-    """Super simple admin endpoint"""
-    return {
-        "message": "✅ ADMIN WORKS!", 
-        "username": "yasirr548",
-        "password": "yasirr548AJSKD#D45s",
-        "dashboard_url": "/admin-full"
-    }
-
-@app.get("/admin-full", response_class=HTMLResponse)
-async def admin_panel():
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin)):
     """Complete Admin Dashboard - Single Page Interface"""
     
     # Get system stats
