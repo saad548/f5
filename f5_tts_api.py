@@ -504,8 +504,8 @@ app = FastAPI(
     title="F5-TTS API",
     description="REST API for F5-TTS Text-to-Speech model with automatic reference text transcription",
     version="1.0.0",
-    docs_url=None,  # Disable public docs
-    redoc_url=None,  # Disable public redoc
+    docs_url="/docs",  # Enable Swagger docs
+    redoc_url="/redoc",  # Enable ReDoc
 )
 
 # Add CORS middleware
