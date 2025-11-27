@@ -712,1004 +712,287 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
     # Get uploaded files
     uploaded_count = len(uploaded_files)
     
-    # Enhanced Voice files list HTML with professional features
+    # Voice files list HTML
     voice_rows = ""
     for voice in voice_files:
-        voice_name_clean = voice['name'].replace('.wav', '').replace('.mp3', '').replace('.flac', '')
         voice_rows += f"""
         <tr>
-            <td>
-                <div style="display: flex; align-items: center;">
-                    <i class="fas fa-file-audio" style="color: #3498db; margin-right: 8px;"></i>
-                    <strong>{voice_name_clean}</strong>
-                </div>
-            </td>
+            <td>{voice['name']}</td>
             <td>{voice['size']}</td>
-            <td><span class="badge">~5-10s</span></td>
-            <td>
-                <span style="color: #27ae60;">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="far fa-star"></i>
-                </span>
-            </td>
-            <td>
-                <button onclick="playVoice('{voice['name']}')" class="btn-small btn-primary">
-                    <i class="fas fa-play"></i> Preview
-                </button>
-                <button onclick="testVoice('{voice['name']}')" class="btn-small btn-success">
-                    <i class="fas fa-microphone"></i> Test TTS
-                </button>
-                <button onclick="deleteVoice('{voice['name']}')" class="btn-small btn-danger">
-                    <i class="fas fa-trash"></i> Delete
-                </button>
-            </td>
+            <td><button onclick="testVoice('{voice['name']}')" class="btn-small">Test</button></td>
         </tr>"""
     
-    # Enhanced Recent jobs HTML with professional features
+    # Recent jobs HTML
     job_rows = ""
     for job in recent_jobs:
         status_color = {"queued": "#f39c12", "processing": "#3498db", "completed": "#27ae60", "failed": "#e74c3c"}.get(job['status'], "#95a5a6")
-        status_icon = {"queued": "clock", "processing": "spinner fa-spin", "completed": "check-circle", "failed": "exclamation-triangle"}.get(job['status'], "question-circle")
-        job_type_icon = {"tts_generate": "microphone", "tts_permanent": "music", "voice_cloning": "clone"}.get(job['type'], "cog")
-        
         job_rows += f"""
         <tr>
-            <td>
-                <code style="background: #f8f9fa; padding: 2px 6px; border-radius: 3px;">{job['id']}</code>
-            </td>
-            <td>
-                <span style="display: flex; align-items: center;">
-                    <i class="fas fa-{job_type_icon}" style="margin-right: 5px;"></i>
-                    {job['type'].replace('_', ' ').title()}
-                </span>
-            </td>
-            <td>
-                <span style="color: {status_color}; font-weight: bold; display: flex; align-items: center;">
-                    <i class="fas fa-{status_icon}" style="margin-right: 5px;"></i>
-                    {job['status'].title()}
-                </span>
-            </td>
-            <td>
-                <div style="display: flex; align-items: center;">
-                    <div class="progress-bar" style="width: 80px; margin-right: 10px;">
-                        <div class="progress-fill" style="width: {job['progress']}%; background: {status_color};"></div>
-                    </div>
-                    <span style="font-size: 0.85em; font-weight: 500;">{job['progress']}%</span>
-                </div>
-            </td>
-            <td style="font-family: monospace; font-size: 0.9em;">{job['created']}</td>
-            <td>
-                <button onclick="viewJobDetails('{job['id']}')" class="btn-small btn-primary">
-                    <i class="fas fa-info-circle"></i> Details
-                </button>
-                {'<button onclick="cancelJob(\'' + job['id'] + '\')" class="btn-small btn-danger"><i class="fas fa-stop"></i> Cancel</button>' if job['status'] in ['queued', 'processing'] else ''}
-            </td>
+            <td>{job['id']}</td>
+            <td>{job['type']}</td>
+            <td><span style="color: {status_color}; font-weight: bold;">{job['status']}</span></td>
+            <td>{job['progress']}%</td>
+            <td>{job['created']}</td>
         </tr>"""
     
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>F5-TTS Professional Admin Dashboard</title>
+        <title>F5-TTS Admin Dashboard</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
-            :root {{
-                --primary-color: #3498db;
-                --secondary-color: #2c3e50;
-                --success-color: #27ae60;
-                --warning-color: #f39c12;
-                --danger-color: #e74c3c;
-                --dark-bg: #1a1a1a;
-                --dark-sidebar: #2d2d2d;
-                --dark-card: #333333;
-                --text-light: #ecf0f1;
-                --border-color: #ecf0f1;
-            }}
-            
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                background: #f8f9fa; 
-                transition: all 0.3s ease;
-            }}
-            
-            body.dark-mode {{
-                background: var(--dark-bg);
-                color: var(--text-light);
-            }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }}
             
             .container {{ display: flex; min-height: 100vh; }}
             
-            /* Enhanced Sidebar */
-            .sidebar {{ 
-                width: 280px; 
-                background: linear-gradient(135deg, #2c3e50, #34495e); 
-                color: white; 
-                padding: 20px; 
-                position: relative;
-                box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-            }}
+            /* Sidebar */
+            .sidebar {{ width: 250px; background: #2c3e50; color: white; padding: 20px; }}
+            .sidebar h2 {{ margin-bottom: 30px; text-align: center; color: #ecf0f1; }}
+            .nav-item {{ padding: 12px 15px; margin: 5px 0; cursor: pointer; border-radius: 5px; transition: all 0.3s; }}
+            .nav-item:hover {{ background: #34495e; }}
+            .nav-item.active {{ background: #3498db; }}
+            .nav-icon {{ margin-right: 10px; }}
             
-            .dark-mode .sidebar {{
-                background: linear-gradient(135deg, var(--dark-sidebar), #404040);
-            }}
+            /* Main Content */
+            .main-content {{ flex: 1; padding: 20px; }}
+            .header {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }}
+            .header h1 {{ color: #2c3e50; margin-bottom: 5px; }}
+            .header p {{ color: #7f8c8d; }}
             
-            .sidebar-header {{
-                text-align: center;
-                margin-bottom: 30px;
-                padding-bottom: 20px;
-                border-bottom: 1px solid rgba(255,255,255,0.1);
-            }}
-            
-            .sidebar h2 {{ 
-                margin-bottom: 10px; 
-                color: #ecf0f1; 
-                font-size: 1.4em;
-            }}
-            
-            .server-status {{
-                background: rgba(46, 204, 113, 0.2);
-                padding: 8px 12px;
-                border-radius: 20px;
-                font-size: 0.85em;
-                display: inline-block;
-            }}
-            
-            .nav-item {{ 
-                padding: 15px 20px; 
-                margin: 8px 0; 
-                cursor: pointer; 
-                border-radius: 8px; 
-                transition: all 0.3s;
-                display: flex;
-                align-items: center;
-                position: relative;
-            }}
-            .nav-item:hover {{ 
-                background: rgba(52, 152, 219, 0.2); 
-                transform: translateX(5px);
-            }}
-            .nav-item.active {{ 
-                background: linear-gradient(45deg, #3498db, #2980b9); 
-                box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
-            }}
-            .nav-icon {{ 
-                margin-right: 15px; 
-                width: 20px;
-                text-align: center;
-            }}
-            
-            /* Theme Toggle */
-            .theme-toggle {{
-                position: absolute;
-                bottom: 20px;
-                left: 20px;
-                right: 20px;
-                padding: 12px;
-                background: rgba(0,0,0,0.2);
-                border: none;
-                border-radius: 8px;
-                color: white;
-                cursor: pointer;
-                transition: all 0.3s;
-            }}
-            
-            .theme-toggle:hover {{
-                background: rgba(0,0,0,0.4);
-            }}
-            
-            /* Enhanced Main Content */
-            .main-content {{ flex: 1; padding: 25px; }}
-            
-            .header {{ 
-                background: white; 
-                padding: 25px; 
-                border-radius: 15px; 
-                box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
-                margin-bottom: 25px;
-                position: relative;
-                overflow: hidden;
-            }}
-            
-            .dark-mode .header {{
-                background: var(--dark-card);
-            }}
-            
-            .header::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 4px;
-                background: linear-gradient(90deg, #3498db, #2ecc71, #f39c12, #e74c3c);
-            }}
-            
-            .header-content {{
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-            
-            .header h1 {{ 
-                color: #2c3e50; 
-                margin-bottom: 8px; 
-                font-size: 2.2em;
-            }}
-            
-            .dark-mode .header h1 {{ color: var(--text-light); }}
-            
-            .header p {{ 
-                color: #7f8c8d; 
-                font-size: 1.1em;
-            }}
-            
-            .live-indicator {{
-                display: flex;
-                align-items: center;
-                background: linear-gradient(45deg, #27ae60, #2ecc71);
-                padding: 10px 15px;
-                border-radius: 25px;
-                color: white;
-                font-weight: 600;
-            }}
-            
-            .live-dot {{
-                width: 8px;
-                height: 8px;
-                background: white;
-                border-radius: 50%;
-                margin-right: 8px;
-                animation: pulse 2s infinite;
-            }}
-            
-            @keyframes pulse {{
-                0% {{ transform: scale(1); opacity: 1; }}
-                50% {{ transform: scale(1.2); opacity: 0.7; }}
-                100% {{ transform: scale(1); opacity: 1; }}
-            }}
-            
-            /* Enhanced Stats Cards */
-            .stats-grid {{ 
-                display: grid; 
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
-                gap: 25px; 
-                margin-bottom: 35px; 
-            }}
-            
-            .stat-card {{ 
-                background: white; 
-                padding: 25px; 
-                border-radius: 15px; 
-                box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
-                text-align: center;
-                position: relative;
-                overflow: hidden;
-                transition: all 0.3s ease;
-            }}
-            
-            .dark-mode .stat-card {{
-                background: var(--dark-card);
-            }}
-            
-            .stat-card:hover {{
-                transform: translateY(-5px);
-                box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-            }}
-            
-            .stat-card::before {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                height: 3px;
-                background: linear-gradient(90deg, var(--primary-color), var(--success-color));
-            }}
-            
-            .stat-value {{ 
-                font-size: 2.5em; 
-                font-weight: 700; 
-                margin-bottom: 8px;
-                background: linear-gradient(45deg, #3498db, #2ecc71);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-            }}
-            
-            .stat-label {{ 
-                color: #7f8c8d; 
-                font-size: 0.95em; 
-                font-weight: 500;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            
-            .stat-trend {{
-                margin-top: 10px;
-                font-size: 0.85em;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }}
-            
-            .trend-up {{ color: var(--success-color); }}
-            .trend-down {{ color: var(--danger-color); }}
-            
+            /* Stats Cards */
+            .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            .stat-card {{ background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }}
+            .stat-value {{ font-size: 2em; font-weight: bold; margin-bottom: 5px; }}
+            .stat-label {{ color: #7f8c8d; font-size: 0.9em; }}
             .stat-good {{ color: #27ae60; }}
             .stat-warning {{ color: #f39c12; }}
             .stat-danger {{ color: #e74c3c; }}
             
-            /* Enhanced Progress Bar */
-            .progress-bar {{ 
-                width: 100%; 
-                height: 8px; 
-                background: #ecf0f1; 
-                border-radius: 4px; 
-                margin-top: 12px;
-                overflow: hidden;
-            }}
+            /* Progress Bar */
+            .progress-bar {{ width: 100%; height: 6px; background: #ecf0f1; border-radius: 3px; margin-top: 10px; }}
+            .progress-fill {{ height: 100%; border-radius: 3px; transition: width 0.3s; }}
             
-            .progress-fill {{ 
-                height: 100%; 
-                border-radius: 4px; 
-                transition: all 0.5s ease;
-                background: linear-gradient(90deg, #3498db, #2ecc71);
-                position: relative;
-            }}
-            
-            .progress-fill::after {{
-                content: '';
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-                animation: shimmer 2s infinite;
-            }}
-            
-            @keyframes shimmer {{
-                0% {{ transform: translateX(-100%); }}
-                100% {{ transform: translateX(100%); }}
-            }}
-            
-            /* Enhanced Content Sections */
-            .content-section {{ 
-                background: white; 
-                border-radius: 15px; 
-                box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
-                margin-bottom: 25px; 
-                display: none;
-                overflow: hidden;
-            }}
-            
-            .dark-mode .content-section {{
-                background: var(--dark-card);
-            }}
-            
+            /* Content Sections */
+            .content-section {{ background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; display: none; }}
             .content-section.active {{ display: block; }}
+            .section-header {{ padding: 20px; border-bottom: 1px solid #ecf0f1; }}
+            .section-content {{ padding: 20px; }}
             
-            .section-header {{ 
-                padding: 25px; 
-                border-bottom: 1px solid #ecf0f1;
-                background: linear-gradient(135deg, #f8f9fa, #ffffff);
-                position: relative;
-            }}
+            /* Tables */
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ecf0f1; }}
+            th {{ background: #f8f9fa; font-weight: 600; color: #2c3e50; }}
+            tr:hover {{ background: #f8f9fa; }}
             
-            .dark-mode .section-header {{
-                background: linear-gradient(135deg, #404040, #4a4a4a);
-                border-bottom-color: #555;
-            }}
+            /* Buttons */
+            .btn-small {{ padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8em; }}
+            .btn-primary {{ background: #3498db; color: white; }}
+            .btn-success {{ background: #27ae60; color: white; }}
+            .btn-danger {{ background: #e74c3c; color: white; }}
             
-            .section-header h3 {{
-                color: #2c3e50;
-                font-size: 1.4em;
-                font-weight: 600;
-            }}
-            
-            .dark-mode .section-header h3 {{ color: var(--text-light); }}
-            
-            .section-content {{ padding: 25px; }}
-            
-            /* Enhanced Tables */
-            table {{ 
-                width: 100%; 
-                border-collapse: collapse;
-                border-radius: 8px;
-                overflow: hidden;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            }}
-            
-            th, td {{ 
-                padding: 15px; 
-                text-align: left; 
-                border-bottom: 1px solid #ecf0f1; 
-            }}
-            
-            th {{ 
-                background: linear-gradient(135deg, #f8f9fa, #e9ecef); 
-                font-weight: 600; 
-                color: #2c3e50;
-                text-transform: uppercase;
-                font-size: 0.85em;
-                letter-spacing: 0.5px;
-            }}
-            
-            .dark-mode th {{
-                background: linear-gradient(135deg, #404040, #4a4a4a);
-                color: var(--text-light);
-            }}
-            
-            .dark-mode td {{
-                border-bottom-color: #555;
-            }}
-            
-            tr:hover {{ 
-                background: linear-gradient(90deg, rgba(52, 152, 219, 0.05), rgba(46, 204, 113, 0.05)); 
-            }}
-            
-            /* Enhanced Buttons */
-            .btn-small {{ 
-                padding: 8px 16px; 
-                border: none; 
-                border-radius: 6px; 
-                cursor: pointer; 
-                font-size: 0.85em;
-                font-weight: 500;
-                transition: all 0.3s;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            
-            .btn-primary {{ 
-                background: linear-gradient(45deg, #3498db, #2980b9); 
-                color: white;
-                box-shadow: 0 2px 10px rgba(52, 152, 219, 0.3);
-            }}
-            
-            .btn-primary:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
-            }}
-            
-            .btn-success {{ 
-                background: linear-gradient(45deg, #27ae60, #229954); 
-                color: white;
-                box-shadow: 0 2px 10px rgba(39, 174, 96, 0.3);
-            }}
-            
-            .btn-success:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
-            }}
-            
-            .btn-danger {{ 
-                background: linear-gradient(45deg, #e74c3c, #c0392b); 
-                color: white;
-                box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
-            }}
-            
-            .btn-danger:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
-            }}
-            
-            /* Charts Container */
-            .chart-container {{
-                background: white;
-                padding: 20px;
-                border-radius: 10px;
-                margin: 20px 0;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            }}
-            
-            .dark-mode .chart-container {{
-                background: var(--dark-card);
-            }}
-            
-            /* Voice Player */
-            .voice-player {{
-                background: linear-gradient(135deg, #f8f9fa, #ffffff);
-                padding: 15px;
-                border-radius: 10px;
-                margin: 10px 0;
-                display: flex;
-                align-items: center;
-                gap: 15px;
-            }}
-            
-            .dark-mode .voice-player {{
-                background: linear-gradient(135deg, #404040, #4a4a4a);
-            }}
-            
-            /* Log Viewer */
-            .log-viewer {{
-                background: #1e1e1e;
-                color: #00ff00;
-                font-family: 'Courier New', monospace;
-                padding: 20px;
-                border-radius: 10px;
-                height: 400px;
-                overflow-y: auto;
-                font-size: 0.9em;
-                line-height: 1.4;
-            }}
-            
-            .log-entry {{
-                margin: 5px 0;
-                padding: 5px;
-                border-left: 3px solid #00ff00;
-                padding-left: 10px;
-            }}
-            
-            .log-error {{ border-left-color: #ff4444; color: #ff4444; }}
-            .log-warning {{ border-left-color: #ffaa00; color: #ffaa00; }}
-            .log-info {{ border-left-color: #00aaff; color: #00aaff; }}
-            
-            /* Responsive Design */
+            /* Responsive */
             @media (max-width: 768px) {{
                 .container {{ flex-direction: column; }}
                 .sidebar {{ width: 100%; }}
                 .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
-                .main-content {{ padding: 15px; }}
-            }}
-            
-            @media (max-width: 480px) {{
-                .stats-grid {{ grid-template-columns: 1fr; }}
-                .header-content {{ flex-direction: column; text-align: center; }}
-                .live-indicator {{ margin-top: 15px; }}
             }}
         </style>
     </head>
     <body>
         <div class="container">
-            <!-- Enhanced Sidebar -->
+            <!-- Sidebar -->
             <div class="sidebar">
-                <div class="sidebar-header">
-                    <h2><i class="fas fa-microphone-alt"></i> F5-TTS Pro</h2>
-                    <div class="server-status">
-                        <i class="fas fa-server"></i> Server Online
-                    </div>
-                </div>
-                
+                <h2>🎤 F5-TTS Admin</h2>
                 <div class="nav-item active" onclick="showSection('dashboard')">
-                    <span class="nav-icon"><i class="fas fa-chart-line"></i></span> Analytics Dashboard
+                    <span class="nav-icon">📊</span> Dashboard
                 </div>
                 <div class="nav-item" onclick="showSection('voices')">
-                    <span class="nav-icon"><i class="fas fa-music"></i></span> Voice Bank Pro
+                    <span class="nav-icon">🎵</span> Voice Bank
                 </div>
                 <div class="nav-item" onclick="showSection('jobs')">
-                    <span class="nav-icon"><i class="fas fa-tasks"></i></span> Job Manager
+                    <span class="nav-icon">⚙️</span> Job Queue
                 </div>
-                <div class="nav-item" onclick="showSection('performance')">
-                    <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span> Performance
+                <div class="nav-item" onclick="showSection('files')">
+                    <span class="nav-icon">📁</span> File Manager
                 </div>
-                <div class="nav-item" onclick="showSection('logs')">
-                    <span class="nav-icon"><i class="fas fa-terminal"></i></span> Live Logs
-                </div>
-                <div class="nav-item" onclick="showSection('users')">
-                    <span class="nav-icon"><i class="fas fa-users"></i></span> User Activity
-                </div>
-                <div class="nav-item" onclick="showSection('settings')">
-                    <span class="nav-icon"><i class="fas fa-cog"></i></span> Configuration
-                </div>
-                <div class="nav-item" onclick="showSection('backup')">
-                    <span class="nav-icon"><i class="fas fa-download"></i></span> Backup & Export
+                <div class="nav-item" onclick="showSection('system')">
+                    <span class="nav-icon">💻</span> System Info
                 </div>
                 <div class="nav-item" onclick="window.open('/docs', '_blank')">
-                    <span class="nav-icon"><i class="fas fa-book"></i></span> API Documentation
+                    <span class="nav-icon">📚</span> API Docs
                 </div>
-                
-                <button class="theme-toggle" onclick="toggleTheme()">
-                    <i class="fas fa-moon" id="theme-icon"></i> <span id="theme-text">Dark Mode</span>
-                </button>
             </div>
             
-            <!-- Enhanced Main Content -->
+            <!-- Main Content -->
             <div class="main-content">
-                <!-- Enhanced Header -->
+                <!-- Header -->
                 <div class="header">
-                    <div class="header-content">
-                        <div>
-                            <h1><i class="fas fa-shield-alt"></i> F5-TTS Control Center</h1>
-                            <p>Professional AI Voice Generation Management System</p>
-                        </div>
-                        <div class="live-indicator">
-                            <div class="live-dot"></div>
-                            <span>LIVE</span>
-                        </div>
-                    </div>
+                    <h1>F5-TTS Administration Dashboard</h1>
+                    <p>Monitor and manage your Text-to-Speech server</p>
                 </div>
                 
-                <!-- Enhanced Stats Overview -->
+                <!-- Stats Overview -->
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-value stat-good"><i class="fas fa-check-circle"></i></div>
-                        <div class="stat-label">System Health</div>
-                        <div class="stat-trend trend-up">
-                            <i class="fas fa-arrow-up"></i> 99.9% Uptime
-                        </div>
+                        <div class="stat-value stat-good">🟢</div>
+                        <div class="stat-label">System Status</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">{len(voice_files)}</div>
-                        <div class="stat-label">Voice Models</div>
-                        <div class="stat-trend trend-up">
-                            <i class="fas fa-plus"></i> +3 this week
-                        </div>
+                        <div class="stat-label">Voice Bank</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">{queue_stats['total_jobs']}</div>
-                        <div class="stat-label">Total Processed</div>
-                        <div class="stat-trend trend-up">
-                            <i class="fas fa-rocket"></i> +{queue_stats['job_counts']['completed']} today
-                        </div>
+                        <div class="stat-label">Total Jobs</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value">{uploaded_count}</div>
-                        <div class="stat-label">Active Sessions</div>
-                        <div class="stat-trend">
-                            <i class="fas fa-users"></i> {uploaded_count} files cached
-                        </div>
+                        <div class="stat-label">Temp Files</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value {'stat-good' if F5TTS_ema_model and vocoder else 'stat-danger'}">
-                            <i class="fas fa-{'brain' if F5TTS_ema_model and vocoder else 'exclamation-triangle'}"></i>
-                        </div>
-                        <div class="stat-label">AI Models</div>
-                        <div class="stat-trend {'trend-up' if F5TTS_ema_model and vocoder else 'trend-down'}">
-                            <i class="fas fa-{'check' if F5TTS_ema_model and vocoder else 'times'}"></i> {'Ready' if F5TTS_ema_model and vocoder else 'Loading'}
-                        </div>
+                        <div class="stat-value {'stat-good' if F5TTS_ema_model and vocoder else 'stat-danger'}">{('✓' if F5TTS_ema_model and vocoder else '✗')}</div>
+                        <div class="stat-label">Models Loaded</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-value stat-warning">{queue_stats['queue_size']}</div>
-                        <div class="stat-label">Queue Status</div>
-                        <div class="stat-trend">
-                            <i class="fas fa-clock"></i> {'Processing' if queue_stats['current_job'] else 'Idle'}
-                        </div>
+                        <div class="stat-label">Queue Size</div>
                     </div>
                 </div>
                 
-                <!-- Analytics Dashboard Section -->
+                <!-- Dashboard Section -->
                 <div id="dashboard" class="content-section active">
                     <div class="section-header">
-                        <h3><i class="fas fa-chart-line"></i> Real-Time Analytics Dashboard</h3>
+                        <h3>📊 System Overview</h3>
                     </div>
                     <div class="section-content">
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <div class="stat-value">{cpu_percent:.1f}%</div>
-                                <div class="stat-label"><i class="fas fa-microchip"></i> CPU Usage</div>
+                                <div class="stat-label">CPU Usage</div>
                                 <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {cpu_percent}%; background: {'linear-gradient(90deg, #e74c3c, #c0392b)' if cpu_percent > 80 else 'linear-gradient(90deg, #f39c12, #e67e22)' if cpu_percent > 50 else 'linear-gradient(90deg, #27ae60, #229954)'};"></div>
+                                    <div class="progress-fill" style="width: {cpu_percent}%; background: {'#e74c3c' if cpu_percent > 80 else '#f39c12' if cpu_percent > 50 else '#27ae60'};"></div>
                                 </div>
                             </div>
                             <div class="stat-card">
                                 <div class="stat-value">{memory.percent:.1f}%</div>
-                                <div class="stat-label"><i class="fas fa-memory"></i> Memory Usage</div>
+                                <div class="stat-label">Memory Usage</div>
                                 <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {memory.percent}%; background: {'linear-gradient(90deg, #e74c3c, #c0392b)' if memory.percent > 80 else 'linear-gradient(90deg, #f39c12, #e67e22)' if memory.percent > 50 else 'linear-gradient(90deg, #27ae60, #229954)'};"></div>
+                                    <div class="progress-fill" style="width: {memory.percent}%; background: {'#e74c3c' if memory.percent > 80 else '#f39c12' if memory.percent > 50 else '#27ae60'};"></div>
                                 </div>
                             </div>
                             <div class="stat-card">
                                 <div class="stat-value">{disk.percent:.1f}%</div>
-                                <div class="stat-label"><i class="fas fa-hdd"></i> Storage Usage</div>
+                                <div class="stat-label">Disk Usage</div>
                                 <div class="progress-bar">
-                                    <div class="progress-fill" style="width: {disk.percent}%; background: {'linear-gradient(90deg, #e74c3c, #c0392b)' if disk.percent > 80 else 'linear-gradient(90deg, #f39c12, #e67e22)' if disk.percent > 50 else 'linear-gradient(90deg, #27ae60, #229954)'};"></div>
+                                    <div class="progress-fill" style="width: {disk.percent}%; background: {'#e74c3c' if disk.percent > 80 else '#f39c12' if disk.percent > 50 else '#27ae60'};"></div>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="chart-container">
-                            <h4><i class="fas fa-chart-area"></i> Performance Metrics</h4>
-                            <canvas id="performanceChart" width="400" height="200"></canvas>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Enhanced Voice Bank Section -->
+                <!-- Voice Bank Section -->
                 <div id="voices" class="content-section">
                     <div class="section-header">
-                        <h3><i class="fas fa-music"></i> Professional Voice Bank Management</h3>
-                        <button class="btn-primary" onclick="uploadVoice()">
-                            <i class="fas fa-upload"></i> Upload New Voice
-                        </button>
+                        <h3>🎵 Voice Bank Management</h3>
                     </div>
                     <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">{len(voice_files)}</div>
-                                <div class="stat-label">Total Voices</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{sum(float(v['size'].split()[0]) for v in voice_files):.1f} MB</div>
-                                <div class="stat-label">Total Storage</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">High</div>
-                                <div class="stat-label">Quality Rating</div>
-                            </div>
-                        </div>
-                        
                         <table>
                             <thead>
                                 <tr>
-                                    <th><i class="fas fa-file-audio"></i> Voice Name</th>
-                                    <th><i class="fas fa-weight"></i> Size</th>
-                                    <th><i class="fas fa-clock"></i> Duration</th>
-                                    <th><i class="fas fa-star"></i> Quality</th>
-                                    <th><i class="fas fa-tools"></i> Actions</th>
+                                    <th>Voice Name</th>
+                                    <th>File Size</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {voice_rows if voice_rows else '<tr><td colspan="5" style="text-align: center; color: #7f8c8d;"><i class="fas fa-info-circle"></i> No voices uploaded yet. Upload your first voice to get started!</td></tr>'}
+                                {voice_rows if voice_rows else '<tr><td colspan="3" style="text-align: center; color: #7f8c8d;">No voices uploaded yet</td></tr>'}
                             </tbody>
                         </table>
                     </div>
                 </div>
                 
-                <!-- Enhanced Job Manager Section -->
+                <!-- Job Queue Section -->
                 <div id="jobs" class="content-section">
                     <div class="section-header">
-                        <h3><i class="fas fa-tasks"></i> Advanced Job Queue Manager</h3>
-                        <div>
-                            <button class="btn-success" onclick="refreshJobs()">
-                                <i class="fas fa-sync-alt"></i> Refresh
-                            </button>
-                            <button class="btn-danger" onclick="clearCompletedJobs()">
-                                <i class="fas fa-trash"></i> Clear Completed
-                            </button>
-                        </div>
+                        <h3>⚙️ Job Queue Status</h3>
                     </div>
                     <div class="section-content">
                         <div class="stats-grid">
                             <div class="stat-card">
-                                <div class="stat-value stat-warning">{queue_stats['job_counts']['queued']}</div>
-                                <div class="stat-label"><i class="fas fa-clock"></i> Queued</div>
+                                <div class="stat-value">{queue_stats['job_counts']['queued']}</div>
+                                <div class="stat-label">Queued</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-value stat-primary">{queue_stats['job_counts']['processing']}</div>
-                                <div class="stat-label"><i class="fas fa-spinner"></i> Processing</div>
+                                <div class="stat-value">{queue_stats['job_counts']['processing']}</div>
+                                <div class="stat-label">Processing</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-value stat-good">{queue_stats['job_counts']['completed']}</div>
-                                <div class="stat-label"><i class="fas fa-check"></i> Completed</div>
+                                <div class="stat-value">{queue_stats['job_counts']['completed']}</div>
+                                <div class="stat-label">Completed</div>
                             </div>
                             <div class="stat-card">
-                                <div class="stat-value stat-danger">{queue_stats['job_counts']['failed']}</div>
-                                <div class="stat-label"><i class="fas fa-exclamation-triangle"></i> Failed</div>
+                                <div class="stat-value">{queue_stats['job_counts']['failed']}</div>
+                                <div class="stat-label">Failed</div>
                             </div>
                         </div>
                         
-                        <h4 style="margin: 25px 0 15px 0;"><i class="fas fa-history"></i> Recent Job Activity</h4>
+                        <h4 style="margin: 20px 0 10px 0;">Recent Jobs</h4>
                         <table>
                             <thead>
                                 <tr>
-                                    <th><i class="fas fa-hashtag"></i> Job ID</th>
-                                    <th><i class="fas fa-tag"></i> Type</th>
-                                    <th><i class="fas fa-traffic-light"></i> Status</th>
-                                    <th><i class="fas fa-chart-line"></i> Progress</th>
-                                    <th><i class="fas fa-calendar"></i> Created</th>
-                                    <th><i class="fas fa-cogs"></i> Actions</th>
+                                    <th>Job ID</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Progress</th>
+                                    <th>Created</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {job_rows if job_rows else '<tr><td colspan="6" style="text-align: center; color: #7f8c8d;"><i class="fas fa-info-circle"></i> No jobs processed yet</td></tr>'}
+                                {job_rows if job_rows else '<tr><td colspan="5" style="text-align: center; color: #7f8c8d;">No jobs yet</td></tr>'}
                             </tbody>
                         </table>
                     </div>
                 </div>
                 
-                <!-- Performance Monitoring Section -->
-                <div id="performance" class="content-section">
+                <!-- File Manager Section -->
+                <div id="files" class="content-section">
                     <div class="section-header">
-                        <h3><i class="fas fa-tachometer-alt"></i> Performance Monitoring</h3>
+                        <h3>📁 File Manager</h3>
                     </div>
                     <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">GPU</div>
-                                <div class="stat-label"><i class="fas fa-microchip"></i> Accelerator</div>
-                                <div class="stat-trend trend-up">
-                                    <i class="fas fa-bolt"></i> CUDA Available
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">1.2s</div>
-                                <div class="stat-label"><i class="fas fa-stopwatch"></i> Avg Generation</div>
-                                <div class="stat-trend trend-up">
-                                    <i class="fas fa-rocket"></i> 15% faster
-                                </div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">24GB</div>
-                                <div class="stat-label"><i class="fas fa-memory"></i> GPU Memory</div>
-                                <div class="stat-trend">
-                                    <i class="fas fa-chart-bar"></i> RTX 4090
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="chart-container">
-                            <h4><i class="fas fa-chart-line"></i> GPU Utilization</h4>
-                            <canvas id="gpuChart" width="400" height="200"></canvas>
-                        </div>
+                        <p><strong>Temporary Files:</strong> {uploaded_count} files in memory</p>
+                        <p><strong>Permanent Voices:</strong> {len(voice_files)} voices in voice bank</p>
+                        <p><strong>Storage Path:</strong> {REFERENCE_VOICES_DIR}</p>
+                        <br>
+                        <button onclick="cleanupFiles()" class="btn-primary">Clean Temporary Files</button>
                     </div>
                 </div>
                 
-                <!-- Live Logs Section -->
-                <div id="logs" class="content-section">
+                <!-- System Info Section -->
+                <div id="system" class="content-section">
                     <div class="section-header">
-                        <h3><i class="fas fa-terminal"></i> Live System Logs</h3>
-                        <div>
-                            <button class="btn-primary" onclick="toggleLogAutoScroll()">
-                                <i class="fas fa-scroll"></i> <span id="scroll-text">Auto Scroll: ON</span>
-                            </button>
-                            <button class="btn-success" onclick="clearLogs()">
-                                <i class="fas fa-eraser"></i> Clear Logs
-                            </button>
-                        </div>
+                        <h3>💻 System Information</h3>
                     </div>
                     <div class="section-content">
-                        <div class="log-viewer" id="logViewer">
-                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: F5-TTS server started successfully</div>
-                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Models loaded and ready for inference</div>
-                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Job queue manager initialized</div>
-                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Admin panel accessed by {credentials.username}</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- User Activity Section -->
-                <div id="users" class="content-section">
-                    <div class="section-header">
-                        <h3><i class="fas fa-users"></i> User Activity Monitor</h3>
-                    </div>
-                    <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">1</div>
-                                <div class="stat-label"><i class="fas fa-user"></i> Active Users</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{queue_stats['total_jobs']}</div>
-                                <div class="stat-label"><i class="fas fa-chart-bar"></i> API Calls</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">0</div>
-                                <div class="stat-label"><i class="fas fa-ban"></i> Rate Limits</div>
-                            </div>
-                        </div>
-                        
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th><i class="fas fa-user"></i> User</th>
-                                    <th><i class="fas fa-clock"></i> Last Active</th>
-                                    <th><i class="fas fa-chart-line"></i> Requests</th>
-                                    <th><i class="fas fa-map-marker-alt"></i> IP Address</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><i class="fas fa-shield-alt"></i> {credentials.username}</td>
-                                    <td>Now</td>
-                                    <td>{queue_stats['total_jobs']}</td>
-                                    <td>Admin Session</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Configuration Section -->
-                <div id="settings" class="content-section">
-                    <div class="section-header">
-                        <h3><i class="fas fa-cog"></i> Server Configuration</h3>
-                        <button class="btn-primary" onclick="saveSettings()">
-                            <i class="fas fa-save"></i> Save Changes
-                        </button>
-                    </div>
-                    <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">F5-TTS v1</div>
-                                <div class="stat-label">Model Version</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">1</div>
-                                <div class="stat-label">Max Workers</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">32</div>
-                                <div class="stat-label">NFE Steps</div>
-                            </div>
-                        </div>
-                        
-                        <h4><i class="fas fa-sliders-h"></i> Model Settings</h4>
-                        <p><strong>Default Speed:</strong> {DEFAULT_INFERENCE_SETTINGS['speed']}</p>
-                        <p><strong>Cross Fade:</strong> {DEFAULT_INFERENCE_SETTINGS['cross_fade_duration']}s</p>
-                        <p><strong>Remove Silence:</strong> {'Enabled' if DEFAULT_INFERENCE_SETTINGS['remove_silence'] else 'Disabled'}</p>
-                        <p><strong>Randomize Seed:</strong> {'Enabled' if DEFAULT_INFERENCE_SETTINGS['randomize_seed'] else 'Disabled'}</p>
-                    </div>
-                </div>
-                
-                <!-- Backup & Export Section -->
-                <div id="backup" class="content-section">
-                    <div class="section-header">
-                        <h3><i class="fas fa-download"></i> Backup & Export Tools</h3>
-                    </div>
-                    <div class="section-content">
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">{len(voice_files)}</div>
-                                <div class="stat-label">Voices to Backup</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">{sum(float(v['size'].split()[0]) for v in voice_files):.1f} MB</div>
-                                <div class="stat-label">Backup Size</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">Ready</div>
-                                <div class="stat-label">Status</div>
-                            </div>
-                        </div>
-                        
-                        <div style="margin-top: 25px;">
-                            <button class="btn-primary" onclick="backupVoices()">
-                                <i class="fas fa-download"></i> Download Voice Bank Backup
-                            </button>
-                            <button class="btn-success" onclick="exportSettings()">
-                                <i class="fas fa-file-export"></i> Export Configuration
-                            </button>
-                            <button class="btn-warning" onclick="exportLogs()">
-                                <i class="fas fa-file-alt"></i> Export System Logs
-                            </button>
-                        </div>
-                        
-                        <h4 style="margin: 25px 0 15px 0;"><i class="fas fa-history"></i> Backup History</h4>
-                        <p><strong>Last Backup:</strong> Never</p>
-                        <p><strong>Auto Backup:</strong> Disabled</p>
-                        <p><strong>Backup Location:</strong> {REFERENCE_VOICES_DIR}</p>
+                        <p><strong>Platform:</strong> {platform.system()} {platform.release()}</p>
+                        <p><strong>F5-TTS Model:</strong> {'✓ Loaded' if F5TTS_ema_model else '✗ Not Loaded'}</p>
+                        <p><strong>Vocoder:</strong> {'✓ Loaded' if vocoder else '✗ Not Loaded'}</p>
+                        <p><strong>Memory:</strong> {memory.used // (1024**3):.1f} GB / {memory.total // (1024**3):.1f} GB</p>
+                        <p><strong>Disk:</strong> {disk.used // (1024**3):.1f} GB / {disk.total // (1024**3):.1f} GB</p>
+                        <p><strong>Current Job:</strong> {queue_stats['current_job'][:8] if queue_stats['current_job'] else 'None'}</p>
                     </div>
                 </div>
             </div>
         </div>
         
         <script>
-            // Theme management
-            let isDarkMode = false;
-            
-            function toggleTheme() {{
-                const body = document.body;
-                const themeIcon = document.getElementById('theme-icon');
-                const themeText = document.getElementById('theme-text');
-                
-                isDarkMode = !isDarkMode;
-                
-                if (isDarkMode) {{
-                    body.classList.add('dark-mode');
-                    themeIcon.className = 'fas fa-sun';
-                    themeText.textContent = 'Light Mode';
-                }} else {{
-                    body.classList.remove('dark-mode');
-                    themeIcon.className = 'fas fa-moon';
-                    themeText.textContent = 'Dark Mode';
-                }}
-            }}
-            
-            // Enhanced section navigation
             function showSection(sectionId) {{
                 // Hide all sections
                 document.querySelectorAll('.content-section').forEach(section => {{
                     section.classList.remove('active');
-                    section.style.opacity = '0';
-                    section.style.transform = 'translateY(20px)';
                 }});
                 
                 // Remove active class from nav items
@@ -1717,265 +1000,37 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                     item.classList.remove('active');
                 }});
                 
-                // Show selected section with animation
-                setTimeout(() => {{
-                    const targetSection = document.getElementById(sectionId);
-                    targetSection.classList.add('active');
-                    targetSection.style.opacity = '1';
-                    targetSection.style.transform = 'translateY(0)';
-                }}, 100);
+                // Show selected section
+                document.getElementById(sectionId).classList.add('active');
                 
                 // Add active class to clicked nav item
                 event.target.closest('.nav-item').classList.add('active');
-                
-                // Initialize charts if dashboard
-                if (sectionId === 'dashboard') {{
-                    initializeCharts();
-                }}
-            }}
-            
-            // Professional voice management functions
-            function playVoice(voiceName) {{
-                // Create audio element and play voice preview
-                const audio = new Audio(`/voice-preview/${{voiceName}}`);
-                audio.play().catch(() => {{
-                    alert('🎵 Voice preview not available\\n\\nGenerate a test TTS to hear this voice.');
-                }});
             }}
             
             function testVoice(voiceName) {{
-                const testText = prompt('Enter test text for voice generation:', 'Hello, this is a test of my voice.');
-                if (testText) {{
-                    showLoadingToast('🎤 Generating TTS with voice: ' + voiceName);
-                    // Here you would call the TTS API
-                    setTimeout(() => {{
-                        showSuccessToast('✅ TTS generated successfully!');
-                    }}, 2000);
-                }}
+                alert('Testing voice: ' + voiceName + '\\n\\nThis will generate a test TTS with this voice.');
+                // You can implement actual test functionality here
             }}
             
-            function deleteVoice(voiceName) {{
-                if (confirm(`🗑️ Delete voice: ${{voiceName}}?\\n\\nThis action cannot be undone.`)) {{
-                    showLoadingToast('Deleting voice...');
-                    // Here you would call the delete API
-                    setTimeout(() => {{
-                        showSuccessToast('Voice deleted successfully!');
-                        location.reload();
-                    }}, 1000);
-                }}
-            }}
-            
-            function uploadVoice() {{
-                alert('🎤 Voice Upload\\n\\nUse the /upload-permanent-voice API endpoint to upload new voices.\\n\\nSupported formats: WAV, MP3, FLAC\\nRecommended: 5-15 seconds, clear speech');
-            }}
-            
-            // Advanced job management
-            function viewJobDetails(jobId) {{
-                fetch(`/jobs/${{jobId}}/status`)
+            function cleanupFiles() {{
+                if (confirm('Clean up all temporary files?')) {{
+                    fetch('/admin/cleanup-jobs', {{method: 'POST'}})
                     .then(response => response.json())
                     .then(data => {{
-                        alert(`📊 Job Details: ${{jobId}}\\n\\nType: ${{data.job_type}}\\nStatus: ${{data.status}}\\nProgress: ${{data.progress}}%\\nCreated: ${{data.created_at}}`);
+                        alert('Cleanup completed: ' + data.message);
+                        location.reload();
                     }})
-                    .catch(() => alert('Error fetching job details'));
-            }}
-            
-            function cancelJob(jobId) {{
-                if (confirm(`⏹️ Cancel job: ${{jobId}}?`)) {{
-                    showLoadingToast('Cancelling job...');
-                    // API call to cancel job
-                    setTimeout(() => showSuccessToast('Job cancelled'), 1000);
+                    .catch(error => alert('Error: ' + error));
                 }}
             }}
             
-            function refreshJobs() {{
-                showLoadingToast('🔄 Refreshing job data...');
-                location.reload();
-            }}
-            
-            function clearCompletedJobs() {{
-                if (confirm('🧹 Clear all completed jobs?')) {{
-                    fetch('/jobs/cleanup', {{method: 'POST'}})
-                        .then(() => {{
-                            showSuccessToast('Completed jobs cleared!');
-                            location.reload();
-                        }})
-                        .catch(() => showErrorToast('Error clearing jobs'));
-                }}
-            }}
-            
-            // Live logs management
-            let autoScroll = true;
-            let logBuffer = [];
-            
-            function toggleLogAutoScroll() {{
-                autoScroll = !autoScroll;
-                const scrollText = document.getElementById('scroll-text');
-                scrollText.textContent = `Auto Scroll: ${{autoScroll ? 'ON' : 'OFF'}}`;
-            }}
-            
-            function clearLogs() {{
-                document.getElementById('logViewer').innerHTML = '<div class="log-entry log-info">[' + new Date().toLocaleTimeString() + '] INFO: Logs cleared by admin</div>';
-            }}
-            
-            function addLogEntry(level, message) {{
-                const logViewer = document.getElementById('logViewer');
-                const timestamp = new Date().toLocaleTimeString();
-                const logEntry = document.createElement('div');
-                logEntry.className = `log-entry log-${{level}}`;
-                logEntry.textContent = `[${{timestamp}}] ${{level.toUpperCase()}}: ${{message}}`;
-                
-                logViewer.appendChild(logEntry);
-                
-                if (autoScroll) {{
-                    logEntry.scrollIntoView({{behavior: 'smooth'}});
-                }}
-            }}
-            
-            // Configuration management
-            function saveSettings() {{
-                showLoadingToast('💾 Saving configuration...');
-                setTimeout(() => showSuccessToast('Settings saved!'), 1000);
-            }}
-            
-            // Backup and export functions
-            function backupVoices() {{
-                showLoadingToast('📦 Creating voice bank backup...');
-                // Simulate backup creation
-                setTimeout(() => {{
-                    const link = document.createElement('a');
-                    link.href = '#';
-                    link.download = `voice-bank-backup-${{new Date().toISOString().split('T')[0]}}.zip`;
-                    showSuccessToast('📥 Backup ready for download!');
-                }}, 2000);
-            }}
-            
-            function exportSettings() {{
-                showLoadingToast('⚙️ Exporting configuration...');
-                setTimeout(() => showSuccessToast('Configuration exported!'), 1000);
-            }}
-            
-            function exportLogs() {{
-                showLoadingToast('📋 Exporting system logs...');
-                setTimeout(() => showSuccessToast('Logs exported!'), 1000);
-            }}
-            
-            // Toast notification system
-            function showToast(message, type = 'info') {{
-                const toast = document.createElement('div');
-                toast.style.cssText = `
-                    position: fixed; top: 20px; right: 20px; z-index: 10000;
-                    padding: 15px 20px; border-radius: 8px; color: white; font-weight: 500;
-                    background: ${{type === 'success' ? '#27ae60' : type === 'error' ? '#e74c3c' : '#3498db'}};
-                    box-shadow: 0 4px 20px rgba(0,0,0,0.3); opacity: 0; transform: translateY(-20px);
-                    transition: all 0.3s ease;
-                `;
-                toast.textContent = message;
-                document.body.appendChild(toast);
-                
-                // Animate in
-                setTimeout(() => {{
-                    toast.style.opacity = '1';
-                    toast.style.transform = 'translateY(0)';
-                }}, 100);
-                
-                // Remove after 3 seconds
-                setTimeout(() => {{
-                    toast.style.opacity = '0';
-                    toast.style.transform = 'translateY(-20px)';
-                    setTimeout(() => document.body.removeChild(toast), 300);
-                }}, 3000);
-            }}
-            
-            function showSuccessToast(message) {{ showToast(message, 'success'); }}
-            function showErrorToast(message) {{ showToast(message, 'error'); }}
-            function showLoadingToast(message) {{ showToast(message, 'info'); }}
-            
-            // Charts initialization
-            function initializeCharts() {{
-                // Performance Chart
-                const perfCtx = document.getElementById('performanceChart');
-                if (perfCtx) {{
-                    new Chart(perfCtx, {{
-                        type: 'line',
-                        data: {{
-                            labels: ['00:00', '00:05', '00:10', '00:15', '00:20', '00:25', '00:30'],
-                            datasets: [{{
-                                label: 'CPU Usage',
-                                data: [{cpu_percent}, 45, 52, 38, {cpu_percent}, 48, {cpu_percent}],
-                                borderColor: '#3498db',
-                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                                tension: 0.4
-                            }}, {{
-                                label: 'Memory Usage',
-                                data: [{memory.percent}, 58, 61, 55, {memory.percent}, 62, {memory.percent}],
-                                borderColor: '#27ae60',
-                                backgroundColor: 'rgba(39, 174, 96, 0.1)',
-                                tension: 0.4
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            plugins: {{ legend: {{ display: true }} }},
-                            scales: {{ y: {{ beginAtZero: true, max: 100 }} }}
-                        }}
-                    }});
-                }}
-                
-                // GPU Chart
-                const gpuCtx = document.getElementById('gpuChart');
-                if (gpuCtx) {{
-                    new Chart(gpuCtx, {{
-                        type: 'doughnut',
-                        data: {{
-                            labels: ['Used', 'Available'],
-                            datasets: [{{
-                                data: [65, 35],
-                                backgroundColor: ['#e74c3c', '#ecf0f1'],
-                                borderWidth: 0
-                            }}]
-                        }},
-                        options: {{
-                            responsive: true,
-                            plugins: {{
-                                legend: {{ position: 'bottom' }}
-                            }}
-                        }}
-                    }});
-                }}
-            }}
-            
-            // Simulated real-time log updates
-            setInterval(() => {{
-                if (document.getElementById('logs').classList.contains('active')) {{
-                    const messages = [
-                        'Job processing completed successfully',
-                        'New voice file cached in memory',
-                        'GPU memory optimization performed',
-                        'Model inference completed in 1.2s',
-                        'Background cleanup task executed'
-                    ];
-                    const levels = ['info', 'info', 'info', 'info', 'info'];
-                    const randomIndex = Math.floor(Math.random() * messages.length);
-                    addLogEntry(levels[randomIndex], messages[randomIndex]);
-                }}
-            }}, 10000);
-            
-            // Auto-refresh for live data (every 30 seconds)
+            // Auto-refresh every 30 seconds
             setInterval(() => {{
                 if (document.getElementById('dashboard').classList.contains('active') || 
                     document.getElementById('jobs').classList.contains('active')) {{
-                    // Only refresh if not actively interacting
-                    if (!document.querySelector(':hover')) {{
-                        location.reload();
-                    }}
+                    location.reload();
                 }}
             }}, 30000);
-            
-            // Initialize charts on page load
-            document.addEventListener('DOMContentLoaded', () => {{
-                initializeCharts();
-                showSuccessToast('🚀 Admin dashboard loaded successfully!');
-            }});
         </script>
     </body>
     </html>
