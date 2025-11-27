@@ -1568,7 +1568,7 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                             <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: F5-TTS server started successfully</div>
                             <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Models loaded and ready for inference</div>
                             <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Job queue manager initialized</div>
-                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Admin panel accessed by {credentials.username}</div>
+                            <div class="log-entry log-info">[{datetime.now().strftime('%H:%M:%S')}] INFO: Admin panel accessed by {credentials}</div>
                         </div>
                     </div>
                 </div>
@@ -1605,7 +1605,7 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
                             </thead>
                             <tbody>
                                 <tr>
-                                    <td><i class="fas fa-shield-alt"></i> {credentials.username}</td>
+                                    <td><i class="fas fa-shield-alt"></i> {credentials}</td>
                                     <td>Now</td>
                                     <td>{queue_stats['total_jobs']}</td>
                                     <td>Admin Session</td>
