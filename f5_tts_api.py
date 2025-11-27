@@ -784,8 +784,16 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
             <td>
                 <button onclick="viewJobDetails('{job['id']}')" class="btn-small btn-primary">
                     <i class="fas fa-info-circle"></i> Details
-                </button>
-                {'<button onclick="cancelJob(\'' + job['id'] + '\')" class="btn-small btn-danger"><i class="fas fa-stop"></i> Cancel</button>' if job['status'] in ['queued', 'processing'] else ''}
+                </button>"""
+        
+        # Add cancel button if job is active
+        if job['status'] in ['queued', 'processing']:
+            job_rows += f"""
+                <button onclick="cancelJob('{job['id']}')" class="btn-small btn-danger">
+                    <i class="fas fa-stop"></i> Cancel
+                </button>"""
+        
+        job_rows += """
             </td>
         </tr>"""
     
