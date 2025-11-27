@@ -214,8 +214,8 @@ async def upload_audio(
         uploaded_files[file_id] = temp_file_path
         
         # Get audio duration for info
+        import librosa
         try:
-            import librosa
             duration = librosa.get_duration(filename=temp_file_path)
         except:
             duration = None
@@ -233,6 +233,110 @@ async def upload_audio(
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
         raise HTTPException(status_code=500, detail=f"Error processing audio file: {str(e)}")
+
+@app.post("/tts-permanent", response_model=TTSGenerateResponse)
+async def tts_permanent(
+    request: PermanentTTSRequest
+):
+    """
+    Generate TTS using a permanent reference voice by name.
+    
+    - Uses permanent voices uploaded via /upload-permanent-voice
+    - Reference voices are stored permanently with readable names
+    - Same advanced settings as regular TTS generation
+    """
+    if not F5TTS_ema_model or not vocoder:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+    
+    # Find voice file
+    voice_files = [f for f in os.listdir(REFERENCE_VOICES_DIR) 
+                   if f.startswith(request.voice_name + ".")]
+    
+    if not voice_files:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Voice '{request.voice_name}' not found. Use /list-voices to see available voices."
+        )
+    
+    voice_file_path = os.path.join(REFERENCE_VOICES_DIR, voice_files[0])
+    
+    if not request.text.strip():
+        raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
+    
+    # Use same settings logic as temporary TTS
+    final_settings = DEFAULT_INFERENCE_SETTINGS.copy()
+    if request.settings:
+        user_settings = request.settings.model_dump(exclude_unset=True)
+        final_settings.update(user_settings)
+    
+    # Validate settings
+    if final_settings["speed"] < 0.3 or final_settings["speed"] > 2.0:
+        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
+    if final_settings["nfe_step"] < 4 or final_settings["nfe_step"] > 64:
+        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
+    if final_settings["cross_fade_duration"] < 0.0 or final_settings["cross_fade_duration"] > 1.0:
+        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
+    
+    # Handle seed logic
+    if final_settings["randomize_seed"]:
+        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
+    elif final_settings["seed"] < 0 or final_settings["seed"] > 2**31 - 1:
+        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
+    
+    torch.manual_seed(final_settings["seed"])
+    
+    try:
+        # Preprocess reference audio
+        ref_text_input = request.ref_text if request.ref_text and request.ref_text.strip() else ""
+        ref_audio, ref_text = preprocess_ref_audio_text(
+            voice_file_path, 
+            ref_text_input,
+            show_info=print
+        )
+        
+        # Generate TTS audio
+        final_wave, final_sample_rate, combined_spectrogram = infer_process(
+            ref_audio,
+            ref_text,
+            request.text,
+            F5TTS_ema_model,
+            vocoder,
+            cross_fade_duration=final_settings["cross_fade_duration"],
+            nfe_step=final_settings["nfe_step"],
+            speed=final_settings["speed"],
+            show_info=print,
+        )
+        
+        # Remove silence if requested
+        if final_settings["remove_silence"]:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                temp_path = f.name
+            try:
+                sf.write(temp_path, final_wave, final_sample_rate)
+                remove_silence_for_generated_wav(temp_path)
+                final_wave, _ = torch.load(temp_path)
+                final_wave = final_wave.squeeze().cpu().numpy()
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        
+        # Save generated audio
+        output_file_id = str(uuid.uuid4())
+        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_output_{output_file_id}.wav")
+        sf.write(output_file_path, final_wave, final_sample_rate)
+        
+        # Store output file mapping
+        uploaded_files[output_file_id] = output_file_path
+        
+        return TTSGenerateResponse(
+            audio_file_id=output_file_id,
+            ref_text=ref_text,
+            message=f"TTS generated using voice '{request.voice_name}'",
+            seed_used=final_settings["seed"]
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating TTS: {str(e)}")
 
 @app.post("/upload-permanent-voice", response_model=PermanentVoiceUploadResponse)
 async def upload_permanent_voice(
@@ -263,8 +367,8 @@ async def upload_permanent_voice(
             shutil.copyfileobj(audio_file.file, buffer)
         
         # Get audio duration for info
+        import librosa
         try:
-            import librosa
             duration = librosa.get_duration(filename=voice_file_path)
         except:
             duration = None
@@ -280,8 +384,6 @@ async def upload_permanent_voice(
         if os.path.exists(voice_file_path):
             os.remove(voice_file_path)
         raise HTTPException(status_code=500, detail=f"Error saving permanent voice: {str(e)}")
-
-@app.post("/tts-generate", response_model=TTSGenerateResponse)
 async def tts_generate(
     background_tasks: BackgroundTasks,
     request: TTSGenerateRequest
@@ -388,107 +490,60 @@ async def tts_generate(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating TTS audio: {str(e)}")
 
-@app.post("/tts-permanent", response_model=TTSGenerateResponse)
-async def tts_permanent(request: PermanentTTSRequest):
+@app.get("/list-voices")
+async def list_voices():
     """
-    Generate TTS using a permanent reference voice by name.
-    
-    - Uses permanent voices uploaded via /upload-permanent-voice
-    - Reference voices are stored permanently with readable names
-    - Same advanced settings as regular TTS generation
+    List all available permanent reference voices.
     """
-    if not F5TTS_ema_model or not vocoder:
-        raise HTTPException(status_code=503, detail="Models not loaded")
-    
-    # Find voice file
-    voice_files = [f for f in os.listdir(REFERENCE_VOICES_DIR) 
-                   if f.startswith(request.voice_name + ".")]
-    
-    if not voice_files:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Voice '{request.voice_name}' not found. Use /list-voices to see available voices."
-        )
-    
-    voice_file_path = os.path.join(REFERENCE_VOICES_DIR, voice_files[0])
-    
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Text to generate cannot be empty")
-    
-    # Use same settings logic as temporary TTS
-    final_settings = DEFAULT_INFERENCE_SETTINGS.copy()
-    if request.settings:
-        user_settings = request.settings.model_dump(exclude_unset=True)
-        final_settings.update(user_settings)
-    
-    # Validate settings
-    if final_settings["speed"] < 0.3 or final_settings["speed"] > 2.0:
-        raise HTTPException(status_code=400, detail="Speed must be between 0.3 and 2.0")
-    if final_settings["nfe_step"] < 4 or final_settings["nfe_step"] > 64:
-        raise HTTPException(status_code=400, detail="NFE steps must be between 4 and 64")
-    if final_settings["cross_fade_duration"] < 0.0 or final_settings["cross_fade_duration"] > 1.0:
-        raise HTTPException(status_code=400, detail="Cross-fade duration must be between 0.0 and 1.0")
-    
-    # Handle seed logic
-    if final_settings["randomize_seed"]:
-        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
-    elif final_settings["seed"] < 0 or final_settings["seed"] > 2**31 - 1:
-        final_settings["seed"] = np.random.randint(0, 2**31 - 1)
-    
-    torch.manual_seed(final_settings["seed"])
-    
     try:
-        # Preprocess reference audio
-        ref_text_input = request.ref_text if request.ref_text and request.ref_text.strip() else ""
-        ref_audio, ref_text = preprocess_ref_audio_text(
-            voice_file_path, 
-            ref_text_input,
-            show_info=print
-        )
+        voice_files = os.listdir(REFERENCE_VOICES_DIR)
+        voices = []
         
-        # Generate TTS audio
-        final_wave, final_sample_rate, combined_spectrogram = infer_process(
-            ref_audio,
-            ref_text,
-            request.text,
-            F5TTS_ema_model,
-            vocoder,
-            cross_fade_duration=final_settings["cross_fade_duration"],
-            nfe_step=final_settings["nfe_step"],
-            speed=final_settings["speed"],
-            show_info=print,
-        )
-        
-        # Remove silence if requested
-        if final_settings["remove_silence"]:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                temp_path = f.name
+        for file in voice_files:
+            if file.startswith('.'):
+                continue
+                
+            voice_name = os.path.splitext(file)[0]
+            file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+            
             try:
-                sf.write(temp_path, final_wave, final_sample_rate)
-                remove_silence_for_generated_wav(temp_path)
-                final_wave, _ = torch.load(temp_path)
-                final_wave = final_wave.squeeze().cpu().numpy()
-            finally:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+                import librosa
+                duration = librosa.get_duration(filename=file_path)
+            except:
+                duration = None
+            
+            voices.append({
+                "name": voice_name,
+                "filename": file,
+                "duration": duration
+            })
         
-        # Save generated audio
-        output_file_id = str(uuid.uuid4())
-        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_output_{output_file_id}.wav")
-        sf.write(output_file_path, final_wave, final_sample_rate)
-        
-        # Store output file mapping
-        uploaded_files[output_file_id] = output_file_path
-        
-        return TTSGenerateResponse(
-            audio_file_id=output_file_id,
-            ref_text=ref_text,
-            message=f"TTS generated using voice '{request.voice_name}'",
-            seed_used=final_settings["seed"]
-        )
+        return {
+            "voices": voices,
+            "total_voices": len(voices),
+            "storage_path": REFERENCE_VOICES_DIR
+        }
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating TTS: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing voices: {str(e)}")
+
+@app.get("/download-audio/{file_id}")
+async def download_audio(file_id: str):
+    """
+    Download generated audio file by file ID.
+    """
+    if file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    file_path = uploaded_files[file_id]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file has expired")
+    
+    return FileResponse(
+        file_path,
+        media_type="audio/wav",
+        filename=f"f5tts_audio_{file_id}.wav"
+    )
 
 @app.post("/voice-cloning", response_model=TTSGenerateResponse)
 async def voice_cloning(
@@ -608,45 +663,6 @@ async def voice_cloning(
         # Always delete temporary reference file
         if os.path.exists(temp_ref_path):
             os.remove(temp_ref_path)
-
-@app.get("/list-voices")
-async def list_voices():
-    """
-    List all available permanent reference voices.
-    """
-    try:
-        voice_files = os.listdir(REFERENCE_VOICES_DIR)
-        voices = []
-        
-        for file in voice_files:
-            if file.startswith('.'):
-                continue
-                
-            voice_name = os.path.splitext(file)[0]
-            file_path = os.path.join(REFERENCE_VOICES_DIR, file)
-            
-            try:
-                import librosa
-                duration = librosa.get_duration(filename=file_path)
-            except:
-                duration = None
-            
-            voices.append({
-                "name": voice_name,
-                "filename": file,
-                "duration": duration
-            })
-        
-        return {
-            "voices": voices,
-            "total_voices": len(voices),
-            "storage_path": REFERENCE_VOICES_DIR
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing voices: {str(e)}")
-
-@app.get("/download-audio/{file_id}")
 async def download_audio(file_id: str):
     """
     Download generated audio file by file ID.
