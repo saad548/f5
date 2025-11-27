@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 # Configuration
-API_BASE = "http://localhost:8000"
+API_BASE = "http://213.181.123.57:20679/"
 TEST_TEXT = "Hello! This is a test of the job queue system. The quick brown fox jumps over the lazy dog."
 
 def test_job_queue_system():
@@ -49,6 +49,11 @@ def test_job_queue_system():
             print("⚠️  No permanent voices found. You'll need to upload some voices first.")
             print("   Use /upload-permanent-voice endpoint to add voices.")
             return
+        
+        # Print all available voices for debugging
+        print("   Available voices:")
+        for voice in voices['voices']:
+            print(f"   - {voice['name']} ({voice['filename']})")
         
         # Use the first available voice for testing
         test_voice = voices['voices'][0]['name']

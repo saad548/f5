@@ -319,10 +319,10 @@ class JobQueueManager:
         job.progress = 20
         
         voice_name = params["voice_name"]
-        voice_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}.wav")
-        
-        if not os.path.exists(voice_path):
-            raise FileNotFoundError(f"Permanent voice not found: {voice_name}")
+        try:
+            voice_path = find_voice_file(voice_name)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(str(e))
         
         job.progress = 30
         
@@ -510,6 +510,17 @@ job_queue_manager = None
 # Permanent storage for reference voices
 REFERENCE_VOICES_DIR = "reference_voices"
 os.makedirs(REFERENCE_VOICES_DIR, exist_ok=True)
+
+def find_voice_file(voice_name: str) -> str:
+    """Find voice file with any supported extension"""
+    supported_extensions = ['.wav', '.mp3', '.MP3', '.flac', '.ogg', '.m4a']
+    
+    for ext in supported_extensions:
+        voice_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}{ext}")
+        if os.path.exists(voice_path):
+            return voice_path
+    
+    raise FileNotFoundError(f"Permanent voice '{voice_name}' not found with any supported extension")
 
 # Pydantic models for request/response
 class AudioUploadResponse(BaseModel):
@@ -1343,8 +1354,9 @@ async def submit_tts_permanent_job(
     Submit permanent voice TTS job (async version of /tts-permanent).
     Returns immediately with job_id for tracking.
     """
-    voice_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}.wav")
-    if not os.path.exists(voice_path):
+    try:
+        voice_path = find_voice_file(voice_name)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Permanent voice '{voice_name}' not found")
     
     if not text.strip():
