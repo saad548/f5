@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Configuration
 API_BASE = "http://213.181.123.57:20679/"
-TEST_TEXT = "Hello! This is a test of the job queue system. The quick brown fox jumps over the lazy dog."
+TEST_TEXT = "In a world shaped by rapid technological progress, communication has become faster, more flexible, and far more immersive than at any point in human history. Every day, new ideas emerge from creative minds across the globe, transforming industries and reshaping the way people work, learn, and interact. Artificial intelligence, once seen as a distant dream of science fiction, now plays an active role in solving complex problems, supporting innovation, and expanding human capability. From voice synthesis to advanced automation, these tools empower individuals with increased efficiency and precision. Modern digital systems are designed to adapt, learn, and respond intelligently, making them valuable partners in both personal and professional life. They enhance daily routines, help manage information, and open doors to creative expression that were once unreachable. Many fields, such as medicine, research, entertainment, and engineering, have already experienced remarkable improvements thanks to intelligent technologies working behind the scenes. As the world grows more interconnected, collaboration across cultures and professions becomes easier and more impactful. With shared knowledge and powerful tools, people can build solutions that address global challenges and unlock new opportunities. Progress is no longer limited to a single region or industry; it flows across borders, connecting communities and encouraging new ways of thinking. While technology continues to evolve at an impressive pace, human imagination remains its driving force. Innovation begins with curiosity, a desire to explore the unknown, and the courage to try new approaches. The future will undoubtedly present challenges, but it will also offer endless possibilities for those willing to embrace change and push beyond the boundaries of what was once considered possible. With creativity, determination, and the right tools, the path forward becomes limitless, inspiring a new generation to shape a brighter and more connected world."
 
 def test_job_queue_system():
     """Test the complete job queue workflow"""
@@ -69,8 +69,8 @@ def test_job_queue_system():
         job_data = {
             'voice_name': test_voice,
             'text': TEST_TEXT,
-            'speed': '1.1',
-            'nfe_step': '16',  # Faster for testing
+            'speed': '1',
+            'nfe_step': '32',  # Faster for testing
             'priority': '1'
         }
         
@@ -210,7 +210,7 @@ def test_multiple_jobs():
             job_data = {
                 'voice_name': test_voice,
                 'text': f"This is test job number {i+1}. Testing concurrent job handling.",
-                'nfe_step': '8',  # Very fast for testing
+                'nfe_step': '32',  # Very fast for testing
                 'priority': str(i)  # Different priorities
             }
             

@@ -22,11 +22,15 @@ from typing import Optional, Dict, Any, List
 import torch
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Depends
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 import uvicorn
+import secrets
+import platform
+import psutil
 
 # Import F5-TTS modules
 from f5_tts.infer.utils_infer import (
@@ -484,10 +488,24 @@ class JobQueueManager:
         if self.worker_thread:
             self.worker_thread.join(timeout=5)
 
+# Admin authentication
+ADMIN_USERNAME = "yasirr548"
+ADMIN_PASSWORD = "yasirr548AJSKD#D45s"  # Change this!
+security = HTTPBasic()
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (correct_username and correct_password):
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+    return credentials.username
+
 app = FastAPI(
     title="F5-TTS API",
     description="REST API for F5-TTS Text-to-Speech model with automatic reference text transcription",
     version="1.0.0",
+    docs_url=None,  # Disable public docs
+    redoc_url=None,  # Disable public redoc
 )
 
 # Add CORS middleware
@@ -1456,6 +1474,350 @@ async def submit_voice_cloning_job(
         "job_id": job_id,
         "message": "Voice cloning job submitted successfully",
         "queue_position": job_queue_manager.job_queue.qsize()
+    }
+
+# Admin Panel Endpoints
+@app.get("/admin", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+async def admin_panel():
+    """Admin panel homepage with system overview"""
+    
+    # Get system stats
+    try:
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('.')
+    except:
+        cpu_percent = 0
+        memory = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
+        disk = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
+    
+    # Get voice counts
+    try:
+        voice_files = [f for f in os.listdir(REFERENCE_VOICES_DIR) if not f.startswith('.')]
+        permanent_voices = len([f for f in voice_files if f.endswith(('.wav', '.mp3', '.flac'))])
+    except:
+        permanent_voices = 0
+    
+    # Get queue stats
+    queue_stats = {"total_jobs": 0, "queue_size": 0, "current_job": None}
+    if job_queue_manager:
+        queue_stats = job_queue_manager.get_queue_status()
+    
+    # Get uploaded files count
+    uploaded_count = len(uploaded_files)
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>F5-TTS Admin Panel</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            .header {{ background: #2c3e50; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px; }}
+            .stat-card {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            .stat-title {{ font-size: 14px; color: #666; margin-bottom: 5px; }}
+            .stat-value {{ font-size: 24px; font-weight: bold; color: #2c3e50; }}
+            .progress-bar {{ width: 100%; height: 8px; background: #eee; border-radius: 4px; margin-top: 5px; }}
+            .progress-fill {{ height: 100%; border-radius: 4px; }}
+            .nav {{ margin-bottom: 20px; }}
+            .nav a {{ display: inline-block; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }}
+            .nav a:hover {{ background: #2980b9; }}
+            .status-good {{ color: #27ae60; }}
+            .status-warning {{ color: #f39c12; }}
+            .status-error {{ color: #e74c3c; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎤 F5-TTS Admin Panel</h1>
+                <p>System monitoring and voice management dashboard</p>
+            </div>
+            
+            <div class="nav">
+                <a href="/admin">Dashboard</a>
+                <a href="/admin/voices">Voice Management</a>
+                <a href="/admin/jobs">Job Queue</a>
+                <a href="/admin/files">File Manager</a>
+                <a href="/admin/docs">API Docs</a>
+                <a href="/admin/logs">System Logs</a>
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-title">System Status</div>
+                    <div class="stat-value status-good">🟢 Online</div>
+                    <div>Platform: {platform.system()} {platform.release()}</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">CPU Usage</div>
+                    <div class="stat-value">{cpu_percent:.1f}%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {cpu_percent}%; background: {'#e74c3c' if cpu_percent > 80 else '#f39c12' if cpu_percent > 50 else '#27ae60'};"></div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Memory Usage</div>
+                    <div class="stat-value">{memory.percent:.1f}%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {memory.percent}%; background: {'#e74c3c' if memory.percent > 80 else '#f39c12' if memory.percent > 50 else '#27ae60'};"></div>
+                    </div>
+                    <div>{memory.used // (1024**3):.1f} GB / {memory.total // (1024**3):.1f} GB</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Disk Usage</div>
+                    <div class="stat-value">{disk.percent:.1f}%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {disk.percent}%; background: {'#e74c3c' if disk.percent > 80 else '#f39c12' if disk.percent > 50 else '#27ae60'};"></div>
+                    </div>
+                    <div>{disk.used // (1024**3):.1f} GB / {disk.total // (1024**3):.1f} GB</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Permanent Voices</div>
+                    <div class="stat-value">{permanent_voices}</div>
+                    <div>Reference voices available</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Uploaded Files</div>
+                    <div class="stat-value">{uploaded_count}</div>
+                    <div>Temporary audio files</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Job Queue</div>
+                    <div class="stat-value">{queue_stats['total_jobs']}</div>
+                    <div>Total: {queue_stats['total_jobs']} | Queue: {queue_stats['queue_size']}</div>
+                    <div>Current: {queue_stats['current_job'][:8] if queue_stats['current_job'] else 'None'}</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-title">Model Status</div>
+                    <div class="stat-value {'status-good' if F5TTS_ema_model and vocoder else 'status-error'}">{'🟢 Loaded' if F5TTS_ema_model and vocoder else '🔴 Not Loaded'}</div>
+                    <div>F5-TTS: {'✓' if F5TTS_ema_model else '✗'} | Vocoder: {'✓' if vocoder else '✗'}</div>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
+
+@app.get("/admin/voices", response_class=HTMLResponse, dependencies=[Depends(verify_admin)])
+async def admin_voices():
+    """Voice management page"""
+    
+    try:
+        voice_files = os.listdir(REFERENCE_VOICES_DIR)
+        voices_data = []
+        
+        for file in voice_files:
+            if file.startswith('.'):
+                continue
+                
+            file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+            if os.path.isfile(file_path):
+                try:
+                    file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+                    mod_time = os.path.getmtime(file_path)
+                    
+                    voices_data.append({
+                        'name': file,
+                        'size': f"{file_size:.2f} MB",
+                        'modified': time.strftime('%Y-%m-%d %H:%M', time.localtime(mod_time)),
+                        'type': file.split('.')[-1].upper() if '.' in file else 'Unknown'
+                    })
+                except:
+                    continue
+                    
+    except Exception as e:
+        voices_data = []
+    
+    voice_rows = ""
+    for voice in voices_data:
+        voice_rows += f"""
+        <tr>
+            <td>{voice['name']}</td>
+            <td>{voice['type']}</td>
+            <td>{voice['size']}</td>
+            <td>{voice['modified']}</td>
+            <td>
+                <button onclick="testVoice('{voice['name']}')">Test</button>
+                <button onclick="deleteVoice('{voice['name']}')">Delete</button>
+            </td>
+        </tr>
+        """
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Voice Management - F5-TTS Admin</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            .header {{ background: #2c3e50; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+            .nav {{ margin-bottom: 20px; }}
+            .nav a {{ display: inline-block; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; margin-right: 10px; }}
+            .nav a:hover {{ background: #2980b9; }}
+            table {{ width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #eee; }}
+            th {{ background: #34495e; color: white; }}
+            button {{ padding: 5px 10px; margin: 2px; border: none; border-radius: 3px; cursor: pointer; }}
+            .test-btn {{ background: #27ae60; color: white; }}
+            .delete-btn {{ background: #e74c3c; color: white; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎤 Voice Management</h1>
+                <p>Manage permanent reference voices</p>
+            </div>
+            
+            <div class="nav">
+                <a href="/admin">Dashboard</a>
+                <a href="/admin/voices">Voice Management</a>
+                <a href="/admin/jobs">Job Queue</a>
+                <a href="/admin/files">File Manager</a>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Voice Name</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Modified</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {voice_rows}
+                </tbody>
+            </table>
+        </div>
+        
+        <script>
+            function testVoice(voiceName) {{
+                alert('Testing voice: ' + voiceName + '\n\nFeature coming soon!');
+            }}
+            
+            function deleteVoice(voiceName) {{
+                if (confirm('Are you sure you want to delete voice: ' + voiceName + '?')) {{
+                    alert('Delete functionality coming soon!');
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+@app.get("/admin/jobs", dependencies=[Depends(verify_admin)])
+async def admin_jobs():
+    """Job queue management"""
+    if not job_queue_manager:
+        raise HTTPException(503, "Job queue not initialized")
+    
+    queue_status = job_queue_manager.get_queue_status()
+    
+    # Get detailed job info
+    jobs_list = []
+    for job_id, job in job_queue_manager.jobs.items():
+        jobs_list.append({
+            "job_id": job_id,
+            "type": job.job_type.value,
+            "status": job.status.value,
+            "progress": job.progress,
+            "created": job.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            "started": job.started_at.strftime('%Y-%m-%d %H:%M:%S') if job.started_at else None,
+            "completed": job.completed_at.strftime('%Y-%m-%d %H:%M:%S') if job.completed_at else None,
+            "error": job.error
+        })
+    
+    return {
+        "queue_status": queue_status,
+        "jobs": jobs_list[-20:],  # Last 20 jobs
+        "total_jobs": len(jobs_list)
+    }
+
+@app.get("/admin/files", dependencies=[Depends(verify_admin)])
+async def admin_files():
+    """File management"""
+    files_info = []
+    
+    for file_id, file_path in uploaded_files.items():
+        try:
+            if os.path.exists(file_path):
+                file_size = os.path.getsize(file_path) / (1024 * 1024)  # MB
+                mod_time = os.path.getmtime(file_path)
+                files_info.append({
+                    "file_id": file_id,
+                    "path": file_path,
+                    "size_mb": round(file_size, 2),
+                    "modified": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mod_time)),
+                    "exists": True
+                })
+            else:
+                files_info.append({
+                    "file_id": file_id,
+                    "path": file_path,
+                    "size_mb": 0,
+                    "modified": "File not found",
+                    "exists": False
+                })
+        except Exception as e:
+            files_info.append({
+                "file_id": file_id,
+                "path": file_path,
+                "error": str(e),
+                "exists": False
+            })
+    
+    return {
+        "uploaded_files": files_info,
+        "total_count": len(uploaded_files),
+        "existing_count": len([f for f in files_info if f.get('exists', False)])
+    }
+
+@app.get("/admin/docs", dependencies=[Depends(verify_admin)])
+async def admin_docs():
+    """Protected API documentation"""
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(
+        openapi_url="/admin/openapi.json",
+        title="F5-TTS Admin API Documentation",
+        swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png"
+    )
+
+@app.get("/admin/openapi.json", dependencies=[Depends(verify_admin)])
+async def admin_openapi():
+    """Protected OpenAPI schema"""
+    from fastapi.openapi.utils import get_openapi
+    return get_openapi(
+        title="F5-TTS API",
+        version="1.0.0",
+        description="REST API for F5-TTS Text-to-Speech model",
+        routes=app.routes,
+    )
+
+@app.post("/admin/cleanup-jobs", dependencies=[Depends(verify_admin)])
+async def admin_cleanup_jobs(max_age_hours: int = 24):
+    """Cleanup old jobs (admin only)"""
+    if not job_queue_manager:
+        raise HTTPException(503, "Job queue not initialized")
+    
+    cleaned_count = job_queue_manager.cleanup_old_jobs(max_age_hours)
+    return {
+        "message": f"Cleaned up {cleaned_count} old jobs",
+        "cleaned_count": cleaned_count
     }
 
 if __name__ == "__main__":
