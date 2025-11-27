@@ -22,13 +22,16 @@ from typing import Optional, Dict, Any, List
 import torch
 import numpy as np
 import soundfile as sf
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Depends
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Depends, Header
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 import uvicorn
 import secrets
+
+# API Security Configuration
+API_SECRET_KEY = "speechora_f5tts_api_key_2025_secure_xyz789"  # Change this to your own secret!
 import platform
 import psutil
 
@@ -500,12 +503,24 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
     return credentials.username
 
+async def verify_api_key(x_api_key: str = Header(..., description="API key for authentication")):
+    """
+    Verify API key for endpoint access
+    """
+    if x_api_key != API_SECRET_KEY:
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid API key. Contact admin for access.",
+            headers={"WWW-Authenticate": "ApiKey"}
+        )
+    return True
+
 app = FastAPI(
     title="F5-TTS API",
     description="REST API for F5-TTS Text-to-Speech model with automatic reference text transcription",
     version="1.0.0",
-    docs_url="/docs",  # Enable Swagger docs
-    redoc_url="/redoc",  # Enable ReDoc
+    docs_url=None,  # Disable public docs
+    redoc_url=None,  # Disable public redoc
 )
 
 # Add CORS middleware
@@ -2445,7 +2460,8 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
 @app.post("/upload-audio", response_model=AudioUploadResponse)
 async def upload_audio(
     background_tasks: BackgroundTasks,
-    audio_file: UploadFile = File(..., description="Reference audio file (temporary use - WAV, MP3, etc.)")
+    audio_file: UploadFile = File(..., description="Reference audio file (temporary use - WAV, MP3, etc.)"),
+    api_key_valid: bool = Depends(verify_api_key)
 ):
     """
     Upload temporary reference audio file for TTS generation.
@@ -2870,7 +2886,7 @@ async def voice_cloning(
             os.remove(temp_ref_path)
 
 @app.get("/list-voices")
-async def list_voices():
+async def list_voices(api_key_valid: bool = Depends(verify_api_key)):
     """
     List all available permanent reference voices.
     """
@@ -2907,7 +2923,7 @@ async def list_voices():
         raise HTTPException(status_code=500, detail=f"Error listing voices: {str(e)}")
 
 @app.get("/voice/{voice_name}")
-async def serve_voice_file(voice_name: str):
+async def serve_voice_file(voice_name: str, api_key_valid: bool = Depends(verify_api_key)):
     """
     Serve voice files directly for audio playback in the admin interface.
     """
@@ -2997,7 +3013,7 @@ async def delete_voice(voice_name: str):
         raise HTTPException(status_code=500, detail=f"Error deleting voice: {str(e)}")
 
 @app.get("/download-audio/{file_id}")
-async def download_audio(file_id: str):
+async def download_audio(file_id: str, api_key_valid: bool = Depends(verify_api_key)):
     """
     Download generated audio file by file ID.
     """
