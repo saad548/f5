@@ -335,7 +335,7 @@ app = FastAPI(
     title="F5-TTS API - Simplified",
     description="Simplified REST API for F5-TTS Text-to-Speech model",
     version="2.0.0",
-    docs_url=None,
+    docs_url=None,  # Disable public docs, use admin-protected endpoint
     redoc_url=None,
 )
 
@@ -467,11 +467,20 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
             .stat-label {{ color: #666; margin-top: 5px; }}
             h1 {{ color: #333; text-align: center; }}
             h2 {{ color: #555; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
+            .nav-links {{ text-align: center; margin: 20px 0; }}
+            .nav-links a {{ display: inline-block; margin: 0 10px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+            .nav-links a:hover {{ background: #0056b3; }}
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🎤 F5-TTS Admin Panel</h1>
+            
+            <div class="nav-links">
+                <a href="/docs" target="_blank">📖 API Documentation</a>
+                <a href="/list-voices" target="_blank">📋 View All Voices</a>
+                <a href="/jobs/queue-status" target="_blank">⚙️ View Queue Status</a>
+            </div>
             
             <div class="card">
                 <h2>📊 System Status</h2>
@@ -497,8 +506,6 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
             
             <div class="card">
                 <h2>🔧 Quick Actions</h2>
-                <p><a href="/list-voices" target="_blank">📋 View All Voices</a></p>
-                <p><a href="/jobs/queue-status" target="_blank">⚙️ View Queue Status</a></p>
                 <p><strong>Current Job:</strong> {queue_stats.get('current_job', 'None')}</p>
             </div>
             
@@ -517,6 +524,32 @@ async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin))
     </html>
     """
     return html_content
+
+@app.get("/docs", include_in_schema=False)
+async def get_docs(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+    """
+    Admin-only Swagger documentation.
+    Requires admin authentication to access API documentation.
+    """
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="F5-TTS API Documentation",
+        swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png"
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_openapi(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+    """
+    Admin-only OpenAPI schema.
+    Requires admin authentication to access API schema.
+    """
+    from fastapi.openapi.utils import get_openapi
+    return get_openapi(
+        title="F5-TTS API - Simplified",
+        version="2.0.0",
+        description="Simplified REST API for F5-TTS Text-to-Speech model with permanent voice management and temporary voice cloning",
+        routes=app.routes,
+    )
 
 # 3. Upload audio (permanent voice)
 @app.post("/upload-audio", dependencies=[Depends(verify_api_key)])
