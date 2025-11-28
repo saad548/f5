@@ -27,7 +27,6 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
-import psutil
 
 # API Security Configuration
 API_SECRET_KEY = "speechora_f5tts_api_key_2025_secure_xyz789"
@@ -56,7 +55,7 @@ DEFAULT_INFERENCE_SETTINGS = {
     "seed": 0,
     "remove_silence": False,
     "speed": 1.0,
-    "nfe_step": 32,
+    "nfe_step": 45,
     "cross_fade_duration": 0.15,
 }
 
@@ -310,18 +309,6 @@ class JobQueueManager:
             "seed": inference_settings["seed"]
         }
 
-# Admin authentication
-ADMIN_USERNAME = "yasirr548"
-ADMIN_PASSWORD = "yasirr548AJSKD#D45s"
-security = HTTPBasic()
-
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
-    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
-    if not (correct_username and correct_password):
-        raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    return credentials.username
-
 async def verify_api_key(x_api_key: str = Header(..., description="API key for authentication")):
     if x_api_key != API_SECRET_KEY:
         raise HTTPException(
@@ -426,111 +413,9 @@ async def health_check():
         "vocoder_loaded": vocoder is not None,
     }
 
-# 2. Admin endpoint
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-    """Simple Admin Panel"""
-    
-    # Get system stats
-    try:
-        cpu_percent = psutil.cpu_percent()
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('.')
-    except:
-        cpu_percent = 0
-        memory = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
-        disk = type('obj', (object,), {'percent': 0, 'used': 0, 'total': 0})
-    
-    # Get voice files
-    voice_count = 0
-    if os.path.exists(REFERENCE_VOICES_DIR):
-        voice_count = len([f for f in os.listdir(REFERENCE_VOICES_DIR) 
-                          if f.endswith(('.wav', '.mp3', '.flac')) and not f.startswith('generated_')])
-    
-    # Get queue stats
-    queue_stats = {"total_jobs": 0, "current_job": None}
-    if job_queue_manager:
-        queue_stats = job_queue_manager.get_queue_status()
-    
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>F5-TTS Admin Panel</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-            .container {{ max-width: 1200px; margin: 0 auto; }}
-            .card {{ background: white; padding: 20px; margin: 20px 0; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; }}
-            .stat-item {{ text-align: center; }}
-            .stat-value {{ font-size: 2em; font-weight: bold; color: #007bff; }}
-            .stat-label {{ color: #666; margin-top: 5px; }}
-            h1 {{ color: #333; text-align: center; }}
-            h2 {{ color: #555; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
-            .nav-links {{ text-align: center; margin: 20px 0; }}
-            .nav-links a {{ display: inline-block; margin: 0 10px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
-            .nav-links a:hover {{ background: #0056b3; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🎤 F5-TTS Admin Panel</h1>
-            
-            <div class="nav-links">
-                <a href="/docs" target="_blank">📖 API Documentation</a>
-                <a href="/list-voices" target="_blank">📋 View All Voices</a>
-                <a href="/jobs/queue-status" target="_blank">⚙️ View Queue Status</a>
-            </div>
-            
-            <div class="card">
-                <h2>📊 System Status</h2>
-                <div class="stats">
-                    <div class="stat-item">
-                        <div class="stat-value">{cpu_percent:.1f}%</div>
-                        <div class="stat-label">CPU Usage</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{memory.percent:.1f}%</div>
-                        <div class="stat-label">Memory Usage</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{voice_count}</div>
-                        <div class="stat-label">Permanent Voices</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value">{queue_stats['total_jobs']}</div>
-                        <div class="stat-label">Total Jobs</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>🔧 Quick Actions</h2>
-                <p><strong>Current Job:</strong> {queue_stats.get('current_job', 'None')}</p>
-            </div>
-            
-            <div class="card">
-                <h2>🛠️ API Information</h2>
-                <p><strong>Version:</strong> 2.0.0 (Simplified)</p>
-                <p><strong>Model:</strong> {DEFAULT_TTS_MODEL}</p>
-                <p><strong>Storage Policy:</strong></p>
-                <ul>
-                    <li><strong>Permanent:</strong> Predefined voices and their generated audio</li>
-                    <li><strong>Temporary:</strong> Voice cloning uploads (auto-deleted after processing)</li>
-                </ul>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return html_content
-
-@app.get("/docs", include_in_schema=False)
-async def get_docs(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-    """
-    Admin-only Swagger documentation.
-    Requires admin authentication to access API documentation.
-    """
+@app.get("/docs548", include_in_schema=False)
+async def get_docs():
+    """API Documentation (Swagger UI)."""
     return get_swagger_ui_html(
         openapi_url="/openapi.json",
         title="F5-TTS API Documentation",
@@ -538,11 +423,8 @@ async def get_docs(credentials: HTTPBasicCredentials = Depends(verify_admin)):
     )
 
 @app.get("/openapi.json", include_in_schema=False)
-async def get_openapi(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-    """
-    Admin-only OpenAPI schema.
-    Requires admin authentication to access API schema.
-    """
+async def get_openapi():
+    """OpenAPI schema."""
     from fastapi.openapi.utils import get_openapi
     return get_openapi(
         title="F5-TTS API - Simplified",
@@ -551,7 +433,7 @@ async def get_openapi(credentials: HTTPBasicCredentials = Depends(verify_admin))
         routes=app.routes,
     )
 
-# 3. Upload audio (permanent voice)
+# 2. Upload audio (permanent voice)
 @app.post("/upload-audio", dependencies=[Depends(verify_api_key)])
 async def upload_permanent_voice(
     audio_file: UploadFile = File(...),
@@ -601,7 +483,7 @@ async def upload_permanent_voice(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-# 4. Voice generate (using predefined voices)
+# 3. Voice generate (using predefined voices)
 @app.post("/voice-generate", dependencies=[Depends(verify_api_key)])
 async def voice_generate(request: VoiceGenerateRequest) -> VoiceResponse:
     """Generate TTS audio using permanent reference voice."""
@@ -676,7 +558,7 @@ async def voice_generate(request: VoiceGenerateRequest) -> VoiceResponse:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice generation failed: {str(e)}")
 
-# 5. Voice clone (with temporary upload)
+# 4. Voice clone (with temporary upload)
 @app.post("/voice-clone", dependencies=[Depends(verify_api_key)])
 async def voice_clone(
     audio_file: UploadFile = File(...),
@@ -772,7 +654,7 @@ async def voice_clone(
             os.remove(temp_file_path)
         raise HTTPException(status_code=500, detail=f"Voice cloning failed: {str(e)}")
 
-# 6. List voices
+# 5. List voices
 @app.get("/list-voices", dependencies=[Depends(verify_api_key)])
 async def list_voices():
     """List all permanent reference voices."""
@@ -794,7 +676,38 @@ async def list_voices():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list voices: {str(e)}")
 
-# 7. Delete voice
+# 6.1. Download all voices
+@app.get("/download-all-voices", dependencies=[Depends(verify_api_key)])
+async def download_all_voices():
+    """Download all permanent reference voices as a ZIP file."""
+    import zipfile
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    try:
+        # Create a ZIP file in memory
+        zip_buffer = io.BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            if os.path.exists(REFERENCE_VOICES_DIR):
+                for file in os.listdir(REFERENCE_VOICES_DIR):
+                    if file.endswith(('.wav', '.mp3', '.MP3', '.flac', '.ogg', '.m4a')) and not file.startswith('generated_'):
+                        file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+                        zip_file.write(file_path, file)
+        
+        zip_buffer.seek(0)
+        
+        # Return the ZIP file as a streaming response
+        return StreamingResponse(
+            io.BytesIO(zip_buffer.read()),
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=all_voices.zip"}
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create ZIP file: {str(e)}")
+
+# 6. Delete voice
 @app.delete("/delete-voice", dependencies=[Depends(verify_api_key)])
 async def delete_voice(voice_name: str):
     """Delete a permanent reference voice and its generated files."""
@@ -840,7 +753,7 @@ async def delete_voice(voice_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete voice: {str(e)}")
 
-# 8. Download audio file
+# 7. Download audio file
 @app.get("/download/{file_id}", dependencies=[Depends(verify_api_key)])
 async def download_audio_file(file_id: str):
     """Download generated audio file."""
@@ -859,7 +772,7 @@ async def download_audio_file(file_id: str):
         filename=f"f5tts_audio_{file_id}.wav"
     )
 
-# 9. Job endpoints
+# 8. Job endpoints
 
 @app.post("/jobs/voice-generate-async", dependencies=[Depends(verify_api_key)])
 async def submit_voice_generate_job(request: VoiceGenerateRequest):
@@ -941,16 +854,6 @@ async def get_job_status(job_id: str):
 async def get_queue_status():
     """Get overall queue status."""
     return job_queue_manager.get_queue_status()
-
-# 10. Admin job cleanup
-@app.post("/admin/cleanup-jobs")
-async def admin_cleanup_jobs(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-    """Clean up old completed jobs (admin only)."""
-    cleaned_count = job_queue_manager.cleanup_old_jobs(max_age_hours=24)
-    return {
-        "message": f"Cleaned up {cleaned_count} old jobs",
-        "jobs_removed": cleaned_count
-    }
 
 if __name__ == "__main__":
     import uvicorn
