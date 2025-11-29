@@ -21,6 +21,7 @@ from typing import Optional, Dict, Any, List
 import numpy as np
 import torch
 import soundfile as sf
+import aiofiles
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks, Request, Depends, Header
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -676,6 +677,20 @@ async def list_voices():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list voices: {str(e)}")
 
+# 5.1. Stream permanent voice file
+@app.get("/stream-voice/{voice_name}", dependencies=[Depends(verify_api_key)])
+async def stream_permanent_voice(voice_name: str, request: Request):
+    """Stream permanent voice file with support for large files and range requests."""
+    try:
+        # Find the permanent voice file
+        voice_path = find_voice_file(voice_name)
+        return await stream_file(voice_path, request)
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stream voice: {str(e)}")
+
 # 6.1. Download all voices
 @app.get("/download-all-voices", dependencies=[Depends(verify_api_key)])
 async def download_all_voices():
@@ -771,6 +786,90 @@ async def download_audio_file(file_id: str):
         media_type='application/octet-stream',
         filename=f"f5tts_audio_{file_id}.wav"
     )
+
+# 7.1. Stream audio file (for large files)
+@app.get("/stream/{file_id}", dependencies=[Depends(verify_api_key)])
+async def stream_audio_file(file_id: str, request: Request):
+    """Stream generated audio file with support for large files and range requests."""
+    if file_id not in uploaded_files:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    file_path = uploaded_files[file_id]
+    if not os.path.exists(file_path):
+        # Clean up dead reference
+        del uploaded_files[file_id]
+        raise HTTPException(status_code=404, detail="Audio file no longer exists")
+    
+    return await stream_file(file_path, request)
+
+async def stream_file(file_path: str, request: Request):
+    """Stream a file with range request support for large files."""
+    import aiofiles
+    from fastapi.responses import StreamingResponse
+    
+    file_size = os.path.getsize(file_path)
+    
+    # Handle range requests for large files
+    range_header = request.headers.get('range')
+    
+    if range_header:
+        # Parse range header: "bytes=start-end"
+        range_match = range_header.replace('bytes=', '').split('-')
+        start = int(range_match[0]) if range_match[0] else 0
+        end = int(range_match[1]) if range_match[1] else file_size - 1
+        
+        # Ensure valid range
+        start = max(0, start)
+        end = min(file_size - 1, end)
+        content_length = end - start + 1
+        
+        async def stream_range():
+            async with aiofiles.open(file_path, 'rb') as f:
+                await f.seek(start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk_size = min(8192, remaining)  # 8KB chunks
+                    chunk = await f.read(chunk_size)
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+        
+        headers = {
+            'Content-Range': f'bytes {start}-{end}/{file_size}',
+            'Accept-Ranges': 'bytes',
+            'Content-Length': str(content_length),
+            'Content-Type': 'audio/wav'
+        }
+        
+        return StreamingResponse(
+            stream_range(),
+            status_code=206,  # Partial Content
+            headers=headers,
+            media_type='audio/wav'
+        )
+    
+    else:
+        # Stream entire file
+        async def stream_entire():
+            async with aiofiles.open(file_path, 'rb') as f:
+                while True:
+                    chunk = await f.read(8192)  # 8KB chunks
+                    if not chunk:
+                        break
+                    yield chunk
+        
+        headers = {
+            'Content-Length': str(file_size),
+            'Accept-Ranges': 'bytes',
+            'Content-Type': 'audio/wav'
+        }
+        
+        return StreamingResponse(
+            stream_entire(),
+            headers=headers,
+            media_type='audio/wav'
+        )
 
 # 8. Job endpoints
 
