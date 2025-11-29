@@ -34,7 +34,7 @@ pip install f5-tts
 
 # Install API dependencies
 echo "📡 Installing API dependencies..."
-pip install fastapi uvicorn[standard] python-multipart librosa soundfile pydub cached-path transformers safetensors psutil
+pip install fastapi uvicorn[standard] python-multipart librosa soundfile pydub cached-path transformers safetensors psutil boto3>=1.34.0 botocore>=1.34.0
 
 # Test F5-TTS installation
 echo "🧪 Testing F5-TTS..."

@@ -12,6 +12,7 @@ import tempfile
 import threading
 import queue
 import secrets
+import boto3
 from datetime import datetime, timedelta
 from enum import Enum
 from concurrent.futures import ThreadPoolExecutor
@@ -243,6 +244,11 @@ class JobQueueManager:
         output_file_path = os.path.join(GENERATED_AUDIO_DIR, f"generated_{voice_name}_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
+        # Upload to R2 and get CDN URL
+        job.progress = 85
+        r2_object_name = f"generated_audio/{voice_name}_{output_file_id}.wav"
+        cdn_url = upload_to_r2(output_file_path, r2_object_name)
+        
         register_file(output_file_id, output_file_path)
         job.progress = 90
         
@@ -251,7 +257,8 @@ class JobQueueManager:
             "voice_name": voice_name,
             "ref_text": ref_text,
             "gen_text": params["text"],
-            "seed": inference_settings["seed"]
+            "seed": inference_settings["seed"],
+            "cdn_url": cdn_url
         }
     
     def _process_voice_clone(self, job: Job) -> Dict[str, Any]:
@@ -296,6 +303,11 @@ class JobQueueManager:
         output_file_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_clone_output_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
+        # Upload to R2 and get CDN URL
+        job.progress = 85
+        r2_object_name = f"temp_audio/{output_file_id}.wav"
+        cdn_url = upload_to_r2(output_file_path, r2_object_name)
+        
         register_file(output_file_id, output_file_path)
         job.progress = 90
         
@@ -307,7 +319,8 @@ class JobQueueManager:
             "output_file_id": output_file_id,
             "ref_text": ref_text,
             "gen_text": params["gen_text"],
-            "seed": inference_settings["seed"]
+            "seed": inference_settings["seed"],
+            "cdn_url": cdn_url
         }
 
 async def verify_api_key(x_api_key: str = Header(..., description="API key for authentication")):
@@ -335,6 +348,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Cloudflare R2 Configuration
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "86417ed1698229eacb9066eb89182d6c")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "6383e5d560553b1382442c42c85934d1")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "c1b70991fe4f1f73b3ea9ee6fa910a1b8e4e56d722f2406a463a2a40a4bfdeec")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "speechora")
+R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "https://cdn.speechora.io")
+
+# Initialize R2 client
+r2_client = boto3.client(
+    's3',
+    endpoint_url=f'https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com',
+    aws_access_key_id=R2_ACCESS_KEY_ID,
+    aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+    region_name='auto'  # Cloudflare R2 uses 'auto' region
+)
+
+def upload_to_r2(file_path: str, object_name: str) -> str:
+    """Upload file to Cloudflare R2 and return CDN URL."""
+    try:
+        # Upload file to R2
+        with open(file_path, 'rb') as f:
+            r2_client.upload_fileobj(
+                f, 
+                R2_BUCKET_NAME, 
+                object_name,
+                ExtraArgs={'ContentType': 'audio/wav'}
+            )
+        
+        # Return CDN URL
+        cdn_url = f"{R2_PUBLIC_URL}/{object_name}"
+        print(f"✅ Uploaded to R2: {cdn_url}")
+        return cdn_url
+        
+    except Exception as e:
+        print(f"❌ R2 upload failed: {e}")
+        raise Exception(f"Failed to upload to R2: {e}")
+
 # Global variables
 vocoder = None
 F5TTS_ema_model = None
@@ -343,8 +393,8 @@ job_queue_manager = None
 
 # Permanent storage for reference voices
 REFERENCE_VOICES_DIR = "reference_voices"
-GENERATED_AUDIO_DIR = "generated_audio"
-TEMP_AUDIO_DIR = "temp_audio"
+GENERATED_AUDIO_DIR = "generated_audio"  # For audio generated from permanent voices
+TEMP_AUDIO_DIR = "temp_audio"  # For temporary voice clone audio (auto-cleanup after 24h)
 PERSISTENCE_FILE = "uploaded_files.json"
 
 def load_uploaded_files():
@@ -354,10 +404,20 @@ def load_uploaded_files():
         try:
             with open(PERSISTENCE_FILE, 'r') as f:
                 data = json.load(f)
-                # Verify files still exist
+                # Verify files still exist and clean up old temp files
                 valid_files = {}
                 for file_id, file_path in data.items():
                     if os.path.exists(file_path):
+                        # Check if temp file is old (>24 hours) 
+                        if "temp_audio" in file_path:
+                            file_age_hours = (datetime.now().timestamp() - os.path.getmtime(file_path)) / 3600
+                            if file_age_hours > 24:
+                                print(f"Cleaning up old temp file: {file_path}")
+                                try:
+                                    os.remove(file_path)
+                                except:
+                                    pass
+                                continue
                         valid_files[file_id] = file_path
                     else:
                         print(f"Warning: File {file_path} no longer exists, removing from mapping")
@@ -415,6 +475,7 @@ class VoiceResponse(BaseModel):
     ref_text: str
     message: str
     seed_used: int
+    cdn_url: Optional[str] = None  # CDN URL for direct playback
 
 class VoiceUploadResponse(BaseModel):
     voice_name: str
@@ -587,13 +648,18 @@ async def voice_generate(request: VoiceGenerateRequest) -> VoiceResponse:
         output_file_path = os.path.join(GENERATED_AUDIO_DIR, f"generated_{request.voice_name}_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
+        # Upload to R2 and get CDN URL
+        r2_object_name = f"generated_audio/{request.voice_name}_{output_file_id}.wav"
+        cdn_url = upload_to_r2(output_file_path, r2_object_name)
+        
         register_file(output_file_id, output_file_path)
         
         return VoiceResponse(
             audio_file_id=output_file_id,
             ref_text=ref_text,
             message=f"TTS generated successfully using voice '{request.voice_name}'",
-            seed_used=inference_settings["seed"]
+            seed_used=inference_settings["seed"],
+            cdn_url=cdn_url
         )
         
     except HTTPException:
@@ -675,6 +741,10 @@ async def voice_clone(
         output_file_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_clone_output_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
+        # Upload to R2 and get CDN URL
+        r2_object_name = f"temp_audio/{output_file_id}.wav"
+        cdn_url = upload_to_r2(output_file_path, r2_object_name)
+        
         register_file(output_file_id, output_file_path)
         
         # Clean up input temp file
@@ -683,9 +753,10 @@ async def voice_clone(
         
         return VoiceResponse(
             audio_file_id=output_file_id,
-            ref_text=ref_text_transcribed,
+            ref_text=ref_text,
             message="Voice cloning completed successfully (temporary)",
-            seed_used=inference_settings["seed"]
+            seed_used=inference_settings["seed"],
+            cdn_url=cdn_url
         )
         
     except HTTPException:
