@@ -680,11 +680,26 @@ async def list_voices():
 # 5.1. Stream permanent voice file
 @app.get("/stream-voice/{voice_name}", dependencies=[Depends(verify_api_key)])
 async def stream_permanent_voice(voice_name: str, request: Request):
-    """Stream permanent voice file with support for large files and range requests."""
+    """Stream permanent voice file with optimized performance for large files."""
     try:
         # Find the permanent voice file
         voice_path = find_voice_file(voice_name)
-        return await stream_file(voice_path, request)
+        
+        # For large voice files, use direct FileResponse for better performance
+        file_size = os.path.getsize(voice_path)
+        
+        if file_size > 10 * 1024 * 1024:  # If file > 10MB, use direct FileResponse
+            return FileResponse(
+                path=voice_path,
+                media_type='audio/wav',
+                filename=voice_name,
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
+                }
+            )
+        else:
+            return await stream_file(voice_path, request)
         
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -790,7 +805,7 @@ async def download_audio_file(file_id: str):
 # 7.1. Stream audio file (for large files)
 @app.get("/stream/{file_id}", dependencies=[Depends(verify_api_key)])
 async def stream_audio_file(file_id: str, request: Request):
-    """Stream generated audio file with support for large files and range requests."""
+    """Stream generated audio file with optimized performance for large files."""
     if file_id not in uploaded_files:
         raise HTTPException(status_code=404, detail="Audio file not found")
     
@@ -800,7 +815,23 @@ async def stream_audio_file(file_id: str, request: Request):
         del uploaded_files[file_id]
         raise HTTPException(status_code=404, detail="Audio file no longer exists")
     
-    return await stream_file(file_path, request)
+    # For large files, use direct FileResponse with streaming support
+    # This is much faster than manual chunking for files > 10MB
+    file_size = os.path.getsize(file_path)
+    
+    if file_size > 10 * 1024 * 1024:  # If file > 10MB, use direct FileResponse
+        return FileResponse(
+            path=file_path,
+            media_type='audio/wav',
+            filename=f"f5tts_audio_{file_id}.wav",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600"  # Cache for 1 hour
+            }
+        )
+    else:
+        # For smaller files, use custom streaming with range support
+        return await stream_file(file_path, request)
 
 async def stream_file(file_path: str, request: Request):
     """Stream a file with range request support for large files."""
