@@ -240,10 +240,10 @@ class JobQueueManager:
         
         # Save to permanent location (generated from permanent voice)
         output_file_id = str(uuid.uuid4())
-        output_file_path = os.path.join(REFERENCE_VOICES_DIR, f"generated_{voice_name}_{output_file_id}.wav")
+        output_file_path = os.path.join(GENERATED_AUDIO_DIR, f"generated_{voice_name}_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
-        uploaded_files[output_file_id] = output_file_path
+        register_file(output_file_id, output_file_path)
         job.progress = 90
         
         return {
@@ -293,10 +293,10 @@ class JobQueueManager:
         
         # Save to temporary location
         output_file_id = str(uuid.uuid4())
-        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_clone_output_{output_file_id}.wav")
+        output_file_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_clone_output_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
-        uploaded_files[output_file_id] = output_file_path
+        register_file(output_file_id, output_file_path)
         job.progress = 90
         
         # Clean up temp input file
@@ -343,7 +343,49 @@ job_queue_manager = None
 
 # Permanent storage for reference voices
 REFERENCE_VOICES_DIR = "reference_voices"
+GENERATED_AUDIO_DIR = "generated_audio"
+TEMP_AUDIO_DIR = "temp_audio"
+PERSISTENCE_FILE = "uploaded_files.json"
+
+def load_uploaded_files():
+    """Load uploaded files mapping from persistence file."""
+    global uploaded_files
+    if os.path.exists(PERSISTENCE_FILE):
+        try:
+            with open(PERSISTENCE_FILE, 'r') as f:
+                data = json.load(f)
+                # Verify files still exist
+                valid_files = {}
+                for file_id, file_path in data.items():
+                    if os.path.exists(file_path):
+                        valid_files[file_id] = file_path
+                    else:
+                        print(f"Warning: File {file_path} no longer exists, removing from mapping")
+                uploaded_files = valid_files
+                print(f"Loaded {len(uploaded_files)} persistent audio files")
+        except Exception as e:
+            print(f"Error loading uploaded files: {e}")
+            uploaded_files = {}
+    else:
+        uploaded_files = {}
+
+def save_uploaded_files():
+    """Save uploaded files mapping to persistence file."""
+    try:
+        with open(PERSISTENCE_FILE, 'w') as f:
+            json.dump(uploaded_files, f, indent=2)
+    except Exception as e:
+        print(f"Error saving uploaded files: {e}")
+
+def register_file(file_id: str, file_path: str):
+    """Register a new file and persist the mapping."""
+    uploaded_files[file_id] = file_path
+    save_uploaded_files()
+
+# Create all necessary directories
 os.makedirs(REFERENCE_VOICES_DIR, exist_ok=True)
+os.makedirs(GENERATED_AUDIO_DIR, exist_ok=True)
+os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
 
 def find_voice_file(voice_name: str) -> str:
     supported_extensions = ['.wav', '.mp3', '.MP3', '.flac', '.ogg', '.m4a']
@@ -542,10 +584,10 @@ async def voice_generate(request: VoiceGenerateRequest) -> VoiceResponse:
         
         # Save to permanent location (since it's from permanent voice)
         output_file_id = str(uuid.uuid4())
-        output_file_path = os.path.join(REFERENCE_VOICES_DIR, f"generated_{request.voice_name}_{output_file_id}.wav")
+        output_file_path = os.path.join(GENERATED_AUDIO_DIR, f"generated_{request.voice_name}_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
-        uploaded_files[output_file_id] = output_file_path
+        register_file(output_file_id, output_file_path)
         
         return VoiceResponse(
             audio_file_id=output_file_id,
@@ -581,7 +623,7 @@ async def voice_clone(
         
         # Save temporary file
         file_extension = os.path.splitext(audio_file.filename or "")[1] or ".wav"
-        temp_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_clone_{uuid.uuid4()}{file_extension}")
+        temp_file_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_clone_{uuid.uuid4()}{file_extension}")
         
         with open(temp_file_path, "wb") as f:
             content = await audio_file.read()
@@ -630,10 +672,10 @@ async def voice_clone(
         
         # Save to temporary location
         output_file_id = str(uuid.uuid4())
-        output_file_path = os.path.join(tempfile.gettempdir(), f"f5tts_clone_output_{output_file_id}.wav")
+        output_file_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_clone_output_{output_file_id}.wav")
         sf.write(output_file_path, final_wave, final_sample_rate)
         
-        uploaded_files[output_file_id] = output_file_path
+        register_file(output_file_id, output_file_path)
         
         # Clean up input temp file
         if temp_file_path and os.path.exists(temp_file_path):
@@ -764,12 +806,19 @@ async def delete_voice(voice_name: str):
         
         # Delete all generated files for this voice
         generated_count = 0
-        if os.path.exists(REFERENCE_VOICES_DIR):
-            for file in os.listdir(REFERENCE_VOICES_DIR):
+        if os.path.exists(GENERATED_AUDIO_DIR):
+            for file in os.listdir(GENERATED_AUDIO_DIR):
                 if file.startswith(f"generated_{voice_name}_") and file.endswith('.wav'):
-                    file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+                    file_path = os.path.join(GENERATED_AUDIO_DIR, file)
+                    # Also remove from uploaded_files mapping
+                    file_ids_to_remove = [fid for fid, fpath in uploaded_files.items() if fpath == file_path]
+                    for fid in file_ids_to_remove:
+                        del uploaded_files[fid]
                     os.remove(file_path)
                     generated_count += 1
+        
+        # Save updated mapping
+        save_uploaded_files()
         
         return {
             "message": f"Voice '{voice_name}' deleted successfully",
@@ -947,7 +996,7 @@ async def submit_voice_clone_job(
         
         # Save temporary file
         file_extension = os.path.splitext(audio_file.filename or "")[1] or ".wav"
-        temp_ref_path = os.path.join(tempfile.gettempdir(), f"f5tts_job_{uuid.uuid4()}{file_extension}")
+        temp_ref_path = os.path.join(TEMP_AUDIO_DIR, f"f5tts_job_{uuid.uuid4()}{file_extension}")
         
         with open(temp_ref_path, "wb") as f:
             content = await audio_file.read()
@@ -986,5 +1035,10 @@ async def get_queue_status():
     return job_queue_manager.get_queue_status()
 
 if __name__ == "__main__":
+    print("🎵 Starting F5-TTS API Server...")
+    print("📁 Loading persistent audio files...")
+    load_uploaded_files()
+    print("🚀 Server ready!")
+    
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
