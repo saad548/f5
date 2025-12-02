@@ -442,6 +442,35 @@ def register_file(file_id: str, file_path: str):
     uploaded_files[file_id] = file_path
     save_uploaded_files()
 
+def save_voice_metadata(voice_name: str, metadata: Dict[str, Any]):
+    """Save voice metadata as JSON file."""
+    metadata_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}_metadata.json")
+    try:
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    except Exception as e:
+        print(f"Error saving metadata for {voice_name}: {e}")
+
+def load_voice_metadata(voice_name: str) -> Optional[Dict[str, Any]]:
+    """Load voice metadata from JSON file."""
+    metadata_path = os.path.join(REFERENCE_VOICES_DIR, f"{voice_name}_metadata.json")
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading metadata for {voice_name}: {e}")
+    return None
+
+def get_audio_duration(file_path: str) -> Optional[float]:
+    """Get audio file duration in seconds."""
+    try:
+        import soundfile as sf
+        with sf.SoundFile(file_path) as f:
+            return len(f) / f.samplerate
+    except:
+        return None
+
 # Create all necessary directories
 os.makedirs(REFERENCE_VOICES_DIR, exist_ok=True)
 os.makedirs(GENERATED_AUDIO_DIR, exist_ok=True)
@@ -481,6 +510,25 @@ class VoiceUploadResponse(BaseModel):
     voice_name: str
     message: str
     duration: Optional[float] = None
+
+class VoiceMetadata(BaseModel):
+    name: str
+    voice_id: Optional[str] = None
+    category: Optional[str] = "custom"
+    labels: Optional[Dict[str, str]] = {}
+    description: Optional[str] = ""
+    
+class VoiceInfo(BaseModel):
+    name: str
+    file_name: str
+    duration: Optional[float] = None
+    metadata: Optional[VoiceMetadata] = None
+
+class BulkUploadResponse(BaseModel):
+    message: str
+    uploaded_count: int
+    voices: List[VoiceInfo]
+    failed: List[Dict[str, str]] = []
 
 # Load models
 def load_f5tts():
@@ -586,6 +634,96 @@ async def upload_permanent_voice(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+# 2.1 Bulk upload voices with metadata
+@app.post("/bulk-upload-voices", dependencies=[Depends(verify_api_key)])
+async def bulk_upload_voices(
+    voice_files: List[UploadFile] = File(...),
+    metadata_file: Optional[UploadFile] = File(None)
+):
+    """
+    Bulk upload multiple voices with metadata.
+    
+    - voice_files: List of audio files
+    - metadata_file: Optional JSON file with all_voices.json structure
+    """
+    try:
+        uploaded_voices = []
+        failed_uploads = []
+        
+        # Load metadata if provided
+        all_metadata = {}
+        if metadata_file:
+            try:
+                content = await metadata_file.read()
+                all_metadata = json.loads(content.decode('utf-8'))
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid metadata file: {str(e)}")
+        
+        # Process each voice file
+        for audio_file in voice_files:
+            try:
+                # Validate file type
+                if not audio_file.content_type or not any(ct in audio_file.content_type.lower() for ct in ['audio', 'wav', 'mp3', 'ogg', 'flac']):
+                    failed_uploads.append({
+                        "file": audio_file.filename,
+                        "error": "Invalid audio file format"
+                    })
+                    continue
+                
+                # Extract voice name from filename
+                voice_name = os.path.splitext(audio_file.filename)[0]
+                clean_voice_name = "".join(c for c in voice_name if c.isalnum() or c in (' ', '-', '_')).strip()
+                
+                if not clean_voice_name:
+                    failed_uploads.append({
+                        "file": audio_file.filename,
+                        "error": "Invalid voice name"
+                    })
+                    continue
+                
+                # Get file extension
+                file_extension = os.path.splitext(audio_file.filename)[1] or ".mp3"
+                permanent_file_path = os.path.join(REFERENCE_VOICES_DIR, f"{clean_voice_name}{file_extension}")
+                
+                # Save audio file
+                with open(permanent_file_path, "wb") as f:
+                    content = await audio_file.read()
+                    f.write(content)
+                
+                # Get duration
+                duration = get_audio_duration(permanent_file_path)
+                
+                # Save metadata if exists
+                voice_metadata = None
+                if clean_voice_name in all_metadata:
+                    voice_metadata = all_metadata[clean_voice_name]
+                    save_voice_metadata(clean_voice_name, voice_metadata)
+                
+                uploaded_voices.append({
+                    "name": clean_voice_name,
+                    "file_name": f"{clean_voice_name}{file_extension}",
+                    "duration": round(duration, 2) if duration else None,
+                    "metadata": voice_metadata
+                })
+                
+            except Exception as e:
+                failed_uploads.append({
+                    "file": audio_file.filename,
+                    "error": str(e)
+                })
+        
+        return {
+            "message": f"Bulk upload completed: {len(uploaded_voices)} successful, {len(failed_uploads)} failed",
+            "uploaded_count": len(uploaded_voices),
+            "voices": uploaded_voices,
+            "failed": failed_uploads
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk upload failed: {str(e)}")
 
 # 3. Voice generate (using predefined voices)
 @app.post("/voice-generate", dependencies=[Depends(verify_api_key)])
@@ -770,23 +908,62 @@ async def voice_clone(
 
 # 5. List voices
 @app.get("/list-voices", dependencies=[Depends(verify_api_key)])
-async def list_voices():
-    """List all permanent reference voices."""
+async def list_voices(
+    gender: Optional[str] = None,
+    age: Optional[str] = None,
+    accent: Optional[str] = None,
+    category: Optional[str] = None
+):
+    """List all permanent reference voices with metadata and optional filters."""
     try:
         voices = []
         if os.path.exists(REFERENCE_VOICES_DIR):
             for file in os.listdir(REFERENCE_VOICES_DIR):
+                # Skip metadata files
+                if file.endswith('_metadata.json') or file.endswith('_ref.txt'):
+                    continue
+                    
                 if file.endswith(('.wav', '.mp3', '.MP3', '.flac', '.ogg', '.m4a')) and not file.startswith('generated_'):
                     file_path = os.path.join(REFERENCE_VOICES_DIR, file)
                     file_size = os.path.getsize(file_path)
                     voice_name = os.path.splitext(file)[0]
-                    voices.append({
+                    
+                    # Load metadata
+                    metadata = load_voice_metadata(voice_name)
+                    
+                    # Apply filters if metadata exists
+                    if metadata and metadata.get('labels'):
+                        labels = metadata['labels']
+                        if gender and labels.get('gender') != gender:
+                            continue
+                        if age and labels.get('age') != age:
+                            continue
+                        if accent and labels.get('accent') != accent:
+                            continue
+                        if category and metadata.get('category') != category:
+                            continue
+                    
+                    # Get duration
+                    duration = get_audio_duration(file_path)
+                    
+                    voice_info = {
                         "voice_name": voice_name,
                         "filename": file,
                         "size": f"{file_size / 1024 / 1024:.1f} MB",
+                        "duration": round(duration, 2) if duration else None,
                         "path": file_path
-                    })
-        return voices
+                    }
+                    
+                    # Add metadata if exists
+                    if metadata:
+                        voice_info["metadata"] = metadata
+                    
+                    voices.append(voice_info)
+        
+        return {
+            "total": len(voices),
+            "voices": voices
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list voices: {str(e)}")
 

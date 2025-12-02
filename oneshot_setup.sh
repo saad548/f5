@@ -23,6 +23,9 @@ source f5tts_env/bin/activate
 # Install PyTorch with CUDA
 echo "🔥 Installing PyTorch with CUDA..."
 pip install torch==2.4.0+cu124 torchaudio==2.4.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+#5090
+# pip install torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+
 
 # Verify CUDA
 echo "✅ Verifying CUDA..."
