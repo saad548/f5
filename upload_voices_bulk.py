@@ -122,6 +122,13 @@ def test_list_voices():
         
         if response.status_code == 200:
             result = response.json()
+            
+            # Handle both old (list) and new (dict) response formats
+            if isinstance(result, list):
+                print(f"\n📊 Total voices: {len(result)} (old format)")
+                print("⚠️  Note: Server not updated yet. Bulk upload may not work.")
+                return
+            
             print(f"\n📊 Total voices: {result['total']}")
             
             # Test filters
@@ -160,6 +167,30 @@ def test_list_voices():
 if __name__ == "__main__":
     print("🎵 F5-TTS Bulk Voice Upload Tool")
     print("=" * 50)
+    
+    # Check if server has the new endpoint
+    print("\n🔍 Checking server version...")
+    try:
+        response = requests.get(
+            f"{API_URL}/list-voices",
+            headers={"X-API-Key": API_KEY}
+        )
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list):
+                print("❌ ERROR: Server not updated!")
+                print("📋 Please do the following on your server:")
+                print("   1. cd /path/to/FT-TTS-FAST-API")
+                print("   2. git pull origin main")
+                print("   3. pkill -f f5_tts_api.py  # Kill old process")
+                print("   4. nohup python3 f5_tts_api.py &  # Restart")
+                print("\n⚠️  Cannot proceed with bulk upload until server is updated.")
+                exit(1)
+            else:
+                print("✅ Server is updated and ready!")
+    except Exception as e:
+        print(f"❌ Cannot connect to server: {e}")
+        exit(1)
     
     bulk_upload()
     test_list_voices()
