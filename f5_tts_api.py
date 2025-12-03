@@ -912,7 +912,8 @@ async def list_voices(
     gender: Optional[str] = None,
     age: Optional[str] = None,
     accent: Optional[str] = None,
-    category: Optional[str] = None
+    category: Optional[str] = None,
+    use_case: Optional[str] = None
 ):
     """List all permanent reference voices with metadata and optional filters."""
     try:
@@ -941,6 +942,8 @@ async def list_voices(
                         if accent and labels.get('accent') != accent:
                             continue
                         if category and metadata.get('category') != category:
+                            continue
+                        if use_case and labels.get('use_case') != use_case:
                             continue
                     
                     # Get duration

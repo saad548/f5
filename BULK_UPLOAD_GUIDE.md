@@ -36,7 +36,7 @@ Each JSON file should contain:
     "age": "middle_aged",
     "gender": "male",
     "language": "en",
-    "use_case": "informative_educational"
+    "use_case": "informative_educational"  // ← NEW: informative_educational, conversational, narrative, etc.
   },
   "description": "A strong voice perfect for delivering a professional broadcast or news story."
 }
@@ -93,8 +93,11 @@ GET /list-voices?accent=british
 # Filter by category
 GET /list-voices?category=premade
 
+# Filter by use_case (NEW!)
+GET /list-voices?use_case=informative_educational
+
 # Combine filters
-GET /list-voices?gender=female&age=young
+GET /list-voices?gender=female&age=young&use_case=conversational
 ```
 
 ## 📋 Response Format
@@ -110,13 +113,15 @@ GET /list-voices?gender=female&age=young
       "size": "0.5 MB",
       "duration": 5.2,
       "path": "/path/to/Daniel.mp3",
+      "use_case": "informative_educational",
       "metadata": {
         "name": "Daniel",
         "category": "premade",
         "labels": {
           "accent": "british",
           "age": "middle_aged",
-          "gender": "male"
+          "gender": "male",
+          "use_case": "informative_educational"
         },
         "description": "Professional broadcast voice"
       }
@@ -170,6 +175,7 @@ voices.forEach(voice => {
             <p>👤 ${labels.gender || 'N/A'}</p>
             <p>🎂 ${labels.age || 'N/A'}</p>
             <p>🌍 ${labels.accent || 'N/A'}</p>
+            <p>🎯 Use: ${voice.use_case || labels.use_case || 'N/A'}</p>
             <p>⏱️ ${voice.duration}s</p>
             <button onclick="selectVoice('${voice.voice_name}')">
                 Select
@@ -182,18 +188,18 @@ voices.forEach(voice => {
 ## ✅ Benefits
 
 1. **Upload Once**: All 26 voices uploaded in one request
-2. **Rich Metadata**: Gender, age, accent, category, description
-3. **Smart Filtering**: Filter by any metadata field
+2. **Rich Metadata**: Gender, age, accent, category, use_case, description
+3. **Smart Filtering**: Filter by any metadata field (including use_case)
 4. **Professional UX**: Display detailed voice info
 5. **Easy Management**: Metadata stored as JSON files
 
 ## 🎨 Voice Discovery
 
 Your frontend can now:
-- 🔍 Filter voices by characteristics
+- 🔍 Filter voices by characteristics (gender, age, accent, use_case)
 - 📊 Show voice statistics
-- 🎯 Recommend voices based on use case
+- 🎯 Recommend voices based on use case (informative, conversational, narrative)
 - 🏷️ Tag and categorize voices
-- 📈 Sort by duration, accent, etc.
+- 📈 Sort by duration, accent, use_case, etc.
 
 Perfect for a professional voice selection UI! 🚀

@@ -95,6 +95,7 @@ def bulk_upload():
                 print(f"     Gender: {labels.get('gender', 'N/A')}")
                 print(f"     Age: {labels.get('age', 'N/A')}")
                 print(f"     Accent: {labels.get('accent', 'N/A')}")
+                print(f"     Use Case: {labels.get('use_case', 'N/A')}")
                 print(f"     Duration: {voice.get('duration', 'N/A')}s")
                 print()
             
@@ -160,6 +161,15 @@ def test_list_voices():
             if response.status_code == 200:
                 british = response.json()
                 print(f"  🇬🇧 British accent: {british['total']}")
+            
+            # Filter by use_case
+            response = requests.get(
+                f"{API_URL}/list-voices?use_case=informative_educational",
+                headers={"X-API-Key": API_KEY}
+            )
+            if response.status_code == 200:
+                use_case_voices = response.json()
+                print(f"  🎯 Informative/Educational: {use_case_voices['total']}")
                 
     except Exception as e:
         print(f"❌ List test failed: {e}")
