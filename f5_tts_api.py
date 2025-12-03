@@ -233,8 +233,7 @@ class JobQueueManager:
             try:
                 sf.write(temp_path, final_wave, final_sample_rate)
                 remove_silence_for_generated_wav(temp_path)
-                final_wave, _ = torch.load(temp_path)
-                final_wave = final_wave.squeeze().cpu().numpy()
+                final_wave, final_sample_rate = sf.read(temp_path)
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -292,8 +291,7 @@ class JobQueueManager:
             try:
                 sf.write(temp_path, final_wave, final_sample_rate)
                 remove_silence_for_generated_wav(temp_path)
-                final_wave, _ = torch.load(temp_path)
-                final_wave = final_wave.squeeze().cpu().numpy()
+                final_wave, final_sample_rate = sf.read(temp_path)
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -775,8 +773,7 @@ async def voice_generate(request: VoiceGenerateRequest) -> VoiceResponse:
             try:
                 sf.write(temp_path, final_wave, final_sample_rate)
                 remove_silence_for_generated_wav(temp_path)
-                final_wave, _ = torch.load(temp_path)
-                final_wave = final_wave.squeeze().cpu().numpy()
+                final_wave, final_sample_rate = sf.read(temp_path)
             finally:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
@@ -868,8 +865,7 @@ async def voice_clone(
             try:
                 sf.write(silence_temp_path, final_wave, final_sample_rate)
                 remove_silence_for_generated_wav(silence_temp_path)
-                final_wave, _ = torch.load(silence_temp_path)
-                final_wave = final_wave.squeeze().cpu().numpy()
+                final_wave, final_sample_rate = sf.read(silence_temp_path)
             finally:
                 if os.path.exists(silence_temp_path):
                     os.remove(silence_temp_path)
