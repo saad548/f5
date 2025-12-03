@@ -957,6 +957,9 @@ async def list_voices(
                     # Add metadata if exists
                     if metadata:
                         voice_info["metadata"] = metadata
+                        # Extract use_case to top level for convenience
+                        if metadata.get('labels') and metadata['labels'].get('use_case'):
+                            voice_info["use_case"] = metadata['labels']['use_case']
                     
                     voices.append(voice_info)
         
@@ -1079,6 +1082,67 @@ async def delete_voice(voice_name: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete voice: {str(e)}")
+
+# 6.1. Delete all voices
+@app.delete("/delete-all-voices", dependencies=[Depends(verify_api_key)])
+async def delete_all_voices():
+    """Delete all permanent reference voices, metadata, and generated files."""
+    try:
+        deleted_voices = []
+        voice_count = 0
+        metadata_count = 0
+        ref_text_count = 0
+        
+        # Delete all voice files and their metadata
+        if os.path.exists(REFERENCE_VOICES_DIR):
+            for file in os.listdir(REFERENCE_VOICES_DIR):
+                file_path = os.path.join(REFERENCE_VOICES_DIR, file)
+                
+                # Delete voice audio files
+                if file.endswith(('.wav', '.mp3', '.MP3', '.flac', '.ogg', '.m4a')) and not file.startswith('generated_'):
+                    voice_name = os.path.splitext(file)[0]
+                    deleted_voices.append(voice_name)
+                    os.remove(file_path)
+                    voice_count += 1
+                
+                # Delete metadata JSON files
+                elif file.endswith('_metadata.json'):
+                    os.remove(file_path)
+                    metadata_count += 1
+                
+                # Delete reference text files
+                elif file.endswith('_ref.txt'):
+                    os.remove(file_path)
+                    ref_text_count += 1
+        
+        # Delete all generated audio files
+        generated_count = 0
+        if os.path.exists(GENERATED_AUDIO_DIR):
+            for file in os.listdir(GENERATED_AUDIO_DIR):
+                if file.startswith('generated_') and file.endswith('.wav'):
+                    file_path = os.path.join(GENERATED_AUDIO_DIR, file)
+                    # Remove from uploaded_files mapping
+                    file_ids_to_remove = [fid for fid, fpath in uploaded_files.items() if fpath == file_path]
+                    for fid in file_ids_to_remove:
+                        del uploaded_files[fid]
+                    os.remove(file_path)
+                    generated_count += 1
+        
+        # Save updated mapping
+        save_uploaded_files()
+        
+        return {
+            "message": "All voices deleted successfully",
+            "deleted_voices": deleted_voices,
+            "voice_files_deleted": voice_count,
+            "metadata_files_deleted": metadata_count,
+            "reference_text_files_deleted": ref_text_count,
+            "generated_files_deleted": generated_count,
+            "total_deleted": voice_count + metadata_count + ref_text_count + generated_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete all voices: {str(e)}")
 
 # 7. Download audio file
 @app.get("/download/{file_id}", dependencies=[Depends(verify_api_key)])
