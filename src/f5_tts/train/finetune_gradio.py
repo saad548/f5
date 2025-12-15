@@ -1039,7 +1039,9 @@ def vocab_extend(project_name, symbols, model_type):
     with open(file_vocab_project, "w", encoding="utf-8") as f:
         f.write("\n".join(vocab))
 
-    if model_type == "F5TTS_v1_Base":
+    if model_type == "OpenF5-TTS-Base":
+        ckpt_path = str(cached_path("hf://mrfakename/OpenF5-TTS-Base/model.pt"))  # ✅ Commercial model
+    elif model_type == "F5TTS_v1_Base":
         ckpt_path = str(cached_path("hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors"))
     elif model_type == "F5TTS_Base":
         ckpt_path = str(cached_path("hf://SWivid/F5-TTS/F5TTS_Base/model_1200000.pt"))
@@ -1446,7 +1448,7 @@ Using the extended model, you can finetune to a new language that is missing sym
 ```""")
 
             exp_name_extend = gr.Radio(
-                label="Model", choices=["F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"], value="F5TTS_v1_Base"
+                label="Model", choices=["OpenF5-TTS-Base", "F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"], value="OpenF5-TTS-Base"  # ✅ Commercial default
             )
 
             with gr.Row():
@@ -1524,7 +1526,7 @@ The auto-setting is still experimental. Set a large value of epoch if not sure; 
 If you encounter a memory error, try reducing the batch size per GPU to a smaller number.
 ```""")
             with gr.Row():
-                exp_name = gr.Radio(label="Model", choices=["F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"])
+                exp_name = gr.Radio(label="Model", choices=["OpenF5-TTS-Base", "F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"])  # ✅ Commercial option
                 tokenizer_file = gr.Textbox(label="Tokenizer File")
                 file_checkpoint_train = gr.Textbox(label="Path to the Pretrained Checkpoint")
 
@@ -1756,7 +1758,7 @@ If you encounter a memory error, try reducing the batch size per GPU to a smalle
 Check the use_ema setting (True or False) for your model to see what works best for you. Set seed to -1 for random.
 ```""")
             exp_name = gr.Radio(
-                label="Model", choices=["F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"], value="F5TTS_v1_Base"
+                label="Model", choices=["OpenF5-TTS-Base", "F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"], value="OpenF5-TTS-Base"  # ✅ Commercial default
             )
             list_checkpoints, checkpoint_select = get_checkpoints_project(projects_selelect, False)
 

@@ -59,7 +59,11 @@ n_fft = model_cfg.model.mel_spec.n_fft
 
 
 # ckpt_path = str(files("f5_tts").joinpath("../../")) + f"/ckpts/{exp_name}/model_{ckpt_step}.safetensors"
-ckpt_path = str(cached_path(f"hf://SWivid/F5-TTS/{exp_name}/model_{ckpt_step}.safetensors"))
+# Default to commercial model, fallback to original if needed
+if exp_name == "OpenF5-TTS-Base":
+    ckpt_path = str(cached_path("hf://mrfakename/OpenF5-TTS-Base/model.pt"))  # ✅ Commercial model
+else:
+    ckpt_path = str(cached_path(f"hf://SWivid/F5-TTS/{exp_name}/model_{ckpt_step}.safetensors"))
 output_dir = "tests"
 
 

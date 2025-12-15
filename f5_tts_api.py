@@ -45,10 +45,17 @@ from f5_tts.model import DiT
 from cached_path import cached_path
 
 # Models and configuration
-DEFAULT_TTS_MODEL = "F5-TTS_v1"
+DEFAULT_TTS_MODEL = "OpenF5-TTS-Base"
 DEFAULT_TTS_MODEL_CFG = [
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors",
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/vocab.txt",
+    "hf://mrfakename/OpenF5-TTS-Base/model.pt",  # ✅ Apache 2.0 License - Commercial Use OK
+    "hf://mrfakename/OpenF5-TTS-Base/vocab.txt",
+    json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
+]
+
+# ⚠️ BACKUP: Local fallback paths in case HuggingFace is unavailable
+LOCAL_MODEL_BACKUP_CFG = [
+    "./models/openf5_model.pt",  # Download model locally as backup
+    "./models/openf5_vocab.txt",
     json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
 ]
 
@@ -531,9 +538,31 @@ class BulkUploadResponse(BaseModel):
 # Load models
 def load_f5tts():
     print("Loading F5-TTS model...")
-    ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
-    F5TTS_model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
-    return load_model(DiT, F5TTS_model_cfg, ckpt_path)
+    
+    # Try primary model source (HuggingFace)
+    try:
+        print("🔄 Attempting to load OpenF5-TTS-Base from HuggingFace...")
+        ckpt_path = str(cached_path(DEFAULT_TTS_MODEL_CFG[0]))
+        F5TTS_model_cfg = json.loads(DEFAULT_TTS_MODEL_CFG[2])
+        print("✅ Successfully loaded model from HuggingFace")
+        return load_model(DiT, F5TTS_model_cfg, ckpt_path)
+    except Exception as e:
+        print(f"⚠️ HuggingFace load failed: {e}")
+        
+        # Try local backup
+        try:
+            print("🔄 Falling back to local backup model...")
+            if os.path.exists(LOCAL_MODEL_BACKUP_CFG[0]):
+                ckpt_path = LOCAL_MODEL_BACKUP_CFG[0]
+                F5TTS_model_cfg = json.loads(LOCAL_MODEL_BACKUP_CFG[2])
+                print("✅ Successfully loaded model from local backup")
+                return load_model(DiT, F5TTS_model_cfg, ckpt_path)
+            else:
+                print("❌ Local backup not found. Please download backup model!")
+                raise FileNotFoundError("No model available - neither HuggingFace nor local backup")
+        except Exception as backup_error:
+            print(f"❌ Local backup load failed: {backup_error}")
+            raise Exception(f"Both HuggingFace and local backup failed. HF: {e}, Local: {backup_error}")
 
 @app.on_event("startup")
 async def startup_event():

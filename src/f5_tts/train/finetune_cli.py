@@ -27,7 +27,7 @@ def parse_args():
         "--exp_name",
         type=str,
         default="F5TTS_v1_Base",
-        choices=["F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"],
+        choices=["OpenF5-TTS-Base", "F5TTS_v1_Base", "F5TTS_Base", "E2TTS_Base"],  # ✅ Commercial option first
         help="Experiment name",
     )
     parser.add_argument("--dataset_name", type=str, default="Emilia_ZH_EN", help="Name of the dataset to use")
@@ -85,7 +85,21 @@ def main():
 
     # Model parameters based on experiment name
 
-    if args.exp_name == "F5TTS_v1_Base":
+    if args.exp_name == "OpenF5-TTS-Base":
+        if args.ckpt_path == "":
+            if args.ckpt_step is not None:
+                ckpt_path = str(cached_path(f"hf://mrfakename/OpenF5-TTS-Base/model.pt"))  # ✅ Commercial model
+            else:
+                ckpt_path = str(cached_path("hf://mrfakename/OpenF5-TTS-Base/model.pt"))
+        else:
+            ckpt_path = args.ckpt_path
+        model_cls = DiT
+        model_cfg = dict(
+            dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4
+        )  # F5-TTS-v1-base
+        vocab_file = str(cached_path("hf://mrfakename/OpenF5-TTS-Base/vocab.txt"))
+
+    elif args.exp_name == "F5TTS_v1_Base":
         wandb_resume_id = None
         model_cls = DiT
         model_cfg = dict(

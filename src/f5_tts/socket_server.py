@@ -219,12 +219,12 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--model",
-        default="F5TTS_v1_Base",
-        help="The model name, e.g. F5TTS_v1_Base",
+        default="OpenF5-TTS-Base",
+        help="The model name, e.g. OpenF5-TTS-Base (commercial version)",
     )
     parser.add_argument(
         "--ckpt_file",
-        default=str(hf_hub_download(repo_id="SWivid/F5-TTS", filename="F5TTS_v1_Base/model_1250000.safetensors")),
+        default=str(hf_hub_download(repo_id="mrfakename/OpenF5-TTS-Base", filename="model.pt")),  # ✅ Commercial version
         help="Path to the model checkpoint file",
     )
     parser.add_argument(

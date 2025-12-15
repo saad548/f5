@@ -51,8 +51,8 @@ DEFAULT_TTS_MODEL = "F5-TTS_v1"
 tts_model_choice = DEFAULT_TTS_MODEL
 
 DEFAULT_TTS_MODEL_CFG = [
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/model_1250000.safetensors",
-    "hf://SWivid/F5-TTS/F5TTS_v1_Base/vocab.txt",
+    "hf://mrfakename/OpenF5-TTS-Base/model.pt",  # ✅ Apache 2.0 License - Commercial Use OK
+    "hf://mrfakename/OpenF5-TTS-Base/vocab.txt",
     json.dumps(dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4)),
 ]
 
@@ -69,6 +69,7 @@ def load_f5tts():
 
 
 def load_e2tts():
+    # Note: Currently using original E2-TTS (no commercial alternative available)
     ckpt_path = str(cached_path("hf://SWivid/E2-TTS/E2TTS_Base/model_1200000.safetensors"))
     E2TTS_model_cfg = dict(dim=1024, depth=24, heads=16, ff_mult=4, text_mask_padding=False, pe_attn_head=1)
     return load_model(UNetT, E2TTS_model_cfg, ckpt_path)
